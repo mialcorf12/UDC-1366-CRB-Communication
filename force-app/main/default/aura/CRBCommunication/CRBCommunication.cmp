@@ -1,0 +1,21 @@
+<aura:component implements="force:appHostable,flexipage:availableForAllPageTypes,flexipage:availableForRecordHome,force:hasRecordId,forceCommunity:availableForAllPageTypes,force:lightningQuickAction"
+                access="global">
+
+    <aura:attribute name="recordId" type="String" />
+    <aura:attribute name="orderFields" type="Object" />
+    <aura:attribute name="sessionId" type="String" default="{!$Api.Session_ID}" />
+    <aura:attribute name="logoUrl" type="String" default="{!$Resource.ulablogo}" />
+    <aura:attribute name="scriptsLoaded" type="Boolean" default="false" />
+
+    <force:recordData aura:id="orderRecord"
+                       recordId="{!v.recordId}"
+                       fields="uLab_Order__c.uLab_Acct_Number__c,uLab_Order__c.Patient_Portal_ID__c,uLab_Order__c.Related_Case_Number__c"
+                       targetFields="{!v.orderFields}"
+                       recordUpdated="{!c.handleRecordUpdated}" />
+
+    <ltng:require scripts="{!$Resource.CRBCommunicationWidgetJs}"
+                  styles="{!$Resource.CRBCommunicationWidgetCss}"
+                  afterScriptsLoaded="{!c.handleScriptsLoaded}" />
+
+    <div class="msgw-host" aura:id="msgwHost"></div>
+</aura:component>
