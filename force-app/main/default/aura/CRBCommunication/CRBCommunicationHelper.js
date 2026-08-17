@@ -1,52 +1,82 @@
 ({
-    API_BASE_URL: "https://apis.qa.udesign.cloud",
+    ENABLED_STATUSES: ["REVIEW_PLAN", "REVIEW_MODIFICATION", "SUBMITTED_TO_UASSIST", "ATTENTION_NEEDED", "PLACE_ORDER"],
 
-    mountIfReady: function (component, event, helper) {
-        if (component._mounted) {
-            return;
-        }
-        if (!component.get("v.scriptsLoaded")) {
-            return;
-        }
+    refresh: function (component) {
+        var recordId = component.get("v.recordId");
+        var action = component.get("c.getMessagesFromApi");
+        action.setParams({ recordId: recordId });
 
-        var fields = component.get("v.orderFields");
-        if (!fields) {
-            return;
-        }
+        var helper = this;
+        action.setCallback(this, function (response) {
+            var state = response.getState();
+            if (state !== "SUCCESS") {
+                return;
+            }
+            var result = response.getReturnValue() || {};
+            component.set("v.messages", result.messages || []);
+            component.set("v.history", result.history || []);
+            component.set("v.caseDisposition", result.caseDisposition);
+            component.set("v.orgId", result.orgId);
+            component.set("v.patientId", result.patientId);
+            component.set("v.caseId", result.caseId);
+            helper.updateComposerDisabled(component);
+        });
+        $A.enqueueAction(action);
+    },
 
-        var orgId = fields.uLab_Acct_Number__c ? fields.uLab_Acct_Number__c.value : null;
-        var patientId = fields.Patient_Portal_ID__c ? fields.Patient_Portal_ID__c.value : null;
-        var caseId = fields.Related_Case_Number__c ? fields.Related_Case_Number__c.value : null;
-
-        if (!orgId || !patientId || !caseId) {
-            return;
-        }
-
-        var sessionId = component.get("v.sessionId");
-        var logoUrl = component.get("v.logoUrl");
-        var hostEl = component.find("msgwHost").getElement();
-
-        if (logoUrl) {
-            hostEl.style.setProperty("--crb-logo-url", "url(" + logoUrl + ")");
-        }
-
-        component._mounted = true;
-
-        window.MessageWidget.mount(hostEl, {
-            apiBaseUrl: this.API_BASE_URL,
-            orgId: orgId,
-            patientId: patientId,
-            caseId: caseId,
-            getToken: function () {
-                return Promise.resolve(sessionId);
-            },
-            onError: function (err) {
-                if (err && err.status === 401) {
-                    return;
-                }
-                // eslint-disable-next-line no-console
-                console.error("CRBCommunication widget error", err);
+    postMessage: function (component, txName, content, onSuccess) {
+        var action = component.get("c.postMessage");
+        action.setParams({
+            recordId: component.get("v.recordId"),
+            txName: txName,
+            content: content
+        });
+        action.setCallback(this, function (response) {
+            if (response.getState() === "SUCCESS" && onSuccess) {
+                onSuccess();
             }
         });
+        $A.enqueueAction(action);
+    },
+
+    postModification: function (component, txName, content, isModification, onSuccess) {
+        var action = component.get("c.postModification");
+        action.setParams({
+            recordId: component.get("v.recordId"),
+            txName: txName,
+            content: content,
+            isModification: isModification
+        });
+        action.setCallback(this, function (response) {
+            if (response.getState() === "SUCCESS" && onSuccess) {
+                onSuccess();
+            }
+        });
+        $A.enqueueAction(action);
+    },
+
+    afterSend: function (component) {
+        component.set("v.inputValue", "");
+        component.set("v.selectedPlanName", null);
+        component.set("v.selectedMessageId", null);
+        this.updateComposerDisabled(component);
+        this.refresh(component);
+    },
+
+    // mirrors widget.js's composerDisabled()
+    updateComposerDisabled: function (component) {
+        var messages = component.get("v.messages") || [];
+        var caseDisposition = component.get("v.caseDisposition");
+        var selectedMessageId = component.get("v.selectedMessageId");
+
+        var disabled = false;
+        if (!selectedMessageId) {
+            disabled = true;
+        } else if (messages.length === 0) {
+            disabled = true;
+        } else if (this.ENABLED_STATUSES.indexOf(caseDisposition) === -1) {
+            disabled = true;
+        }
+        component.set("v.composerDisabled", disabled);
     }
 })
