@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomLabels xmlns="http://soap.sforce.com/2006/04/metadata">
+    <labels>
+        <fullName>Authkey</fullName>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription>Authkey</shortDescription>
+        <value>Basic MG9hOG1nNDIxNDVJZUNFRFo1ZDc6aG1neHNjUHk0bmxMVm9SNW9DNXZUbjV6WUtLMXFBOW1TM0daVUlONA==</value>
+    </labels>
+    <labels>
+        <fullName>tokenapi</fullName>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription>tokenapi</shortDescription>
+        <value>https://ulab-ciam-qa.okta.com/oauth2/aus98pux4mElRwPhG5d7/v1/token</value>
+    </labels>
+</CustomLabels>

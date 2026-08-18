@@ -22,7 +22,7 @@
 
     <div class="msgw">
         <div class="msgw-header">
-            <span class="msgw-header-title">uAssist Communication</span>
+            <span class="msgw-header-title">CRB Communication</span>
             <lightning:button label="Sync" onclick="{!c.submit}" class="msgw-sync" />
         </div>
 

@@ -6,15 +6,14 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  width: 536px;
-  max-width: 100vw;
   height: 640px;
   max-height: 100vh;
-  background: #263238;
+  background: #fff;
+  border: 1px solid #e0e0e0;
   border-radius: 8px;
   overflow: hidden;
   font-family: Roboto, "Helvetica Neue", Arial, sans-serif;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 .msgw * {
   box-sizing: border-box;
@@ -26,8 +25,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  color: #fff;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  color: #1a1a1a;
+  border-bottom: 1px solid #eee;
 }
 .msgw-header-title {
   font-size: 16px;
@@ -36,11 +35,27 @@
 .msgw-close {
   background: none;
   border: none;
-  color: #fff;
+  color: #1a1a1a;
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
   padding: 0 4px;
+}
+.msgw-sync {
+    margin-right: 15px !important;
+    border-radius: 50px !important;
+    background-color: #abe7eb !important;
+    color: #111212 !important;
+    font-size: 14px !important;
+    height: 40px !important;
+    padding: 0 25px !important;
+    font-family: 'system-ui' !important;
+    white-space: nowrap;
+    text-align: center;
+    font-weight: bold;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    transition: all .3s ease;
+    animation: pulse 1.5s infinite;
 }
 
 /* thread scroller */
@@ -49,13 +64,14 @@
   overflow-y: auto;
   padding: 8px 16px 16px;
   scrollbar-width: none;
+  background: #fff;
 }
 .msgw-thread::-webkit-scrollbar {
   display: none;
 }
 
 .msgw-loading {
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(0, 0, 0, 0.6);
   text-align: center;
   padding: 24px;
 }
@@ -63,7 +79,7 @@
 /* rows */
 .msgw-row {
   margin-top: 16px;
-  color: #fff;
+  color: #1a1a1a;
 }
 .msgw-row--right {
   display: flex;
@@ -97,23 +113,23 @@
   display: flex;
   align-items: center;
   font-size: 14px;
-  color: #fff;
+  color: #1a1a1a;
 }
 .msgw-divider {
   width: 1px;
   height: 12px;
-  background: rgba(255, 255, 255, 0.4);
+  background: rgba(0, 0, 0, 0.2);
   margin: 0 8px;
 }
 .msgw-role {
   font-size: 11px;
   letter-spacing: 0.5px;
-  color: rgba(255, 255, 255, 0.7);
+  color: #5f6368;
   text-transform: uppercase;
 }
 .msgw-time {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.7);
+  color: #5f6368;
   margin-top: 2px;
 }
 .msgw-time--right {
@@ -130,12 +146,15 @@
 }
 .msgw-bubble--left {
   margin-left: 32px;
-  background: #eee;
+  background: #eef1f3;
   color: rgba(0, 0, 0, 0.87);
+  border-left: 4px solid #0288d1;
+  border-radius: 2px 4px 4px 2px;
 }
 .msgw-bubble--right {
-  background: rgba(33, 150, 243, 0.16);
-  color: #fff;
+  background: #f1f8ff;
+  color: rgba(0, 0, 0, 0.87);
+  border: 1px solid #dceafd;
 }
 .msgw-subject {
   font-weight: 700;
@@ -144,7 +163,7 @@
   margin-bottom: 2px;
 }
 .msgw-bubble--right .msgw-subject {
-  color: #4fc3f7;
+  color: #0d6cb8;
 }
 .msgw-title {
   font-weight: 700;
@@ -152,7 +171,7 @@
   margin-bottom: 4px;
 }
 .msgw-bubble--right .msgw-title {
-  color: #4fc3f7;
+  color: #0d6cb8;
 }
 .msgw-text {
   font-size: 14px;
@@ -196,12 +215,18 @@
   cursor: pointer;
 }
 .msgw-btn--primary {
-  background: #0288d1;
-  color: #fff;
+  background: #fff;
+  color: #0288d1;
+  border: 1px solid #0288d1;
+  border-radius: 999px;
+}
+.msgw-btn--primary:hover:not(:disabled) {
+  background: rgba(2, 136, 209, 0.08);
 }
 .msgw-btn:disabled {
-  background: rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.5);
+  background: #f5f5f5;
+  color: rgba(0, 0, 0, 0.26);
+  border-color: #e0e0e0;
   cursor: not-allowed;
 }
 
@@ -229,7 +254,7 @@
   justify-content: center;
   height: 100%;
   padding: 32px 16px;
-  color: #fff;
+  color: #1a1a1a;
 }
 .msgw-empty-title {
   font-size: 20px;
@@ -239,23 +264,24 @@
 .msgw-empty-sub {
   font-size: 14px;
   text-align: center;
-  color: rgba(255, 255, 255, 0.8);
+  color: #5f6368;
   max-width: 320px;
 }
 
 /* composer */
 .msgw-composer {
   padding: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 1px solid #eee;
+  background: #fff;
 }
 .msgw-composer-box {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  background: #fff;
+  background: #f1f3f4;
   border: 1px solid transparent;
-  border-radius: 4px;
-  padding: 8px;
+  border-radius: 24px;
+  padding: 8px 8px 8px 16px;
   transition: border-color 0.1s linear;
 }
 .msgw-composer-box:focus-within {
@@ -278,14 +304,21 @@
 }
 .msgw-send {
   flex: 0 0 auto;
-  background: none;
+  width: 32px;
+  height: 32px;
+  background: #0288d1;
   border: none;
-  color: #0288d1;
-  font-size: 18px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  padding: 4px;
+  padding: 0;
 }
 .msgw-send:disabled {
+  background: #e0e0e0;
   color: rgba(0, 0, 0, 0.26);
   cursor: not-allowed;
 }

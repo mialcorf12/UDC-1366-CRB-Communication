@@ -1,4 +1,3 @@
-.THIS {
-    display: flex;
-    justify-content: center;
+.THIS body {
+    font-family: 'Oswald';
 }

@@ -1,4 +1,33 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Package xmlns="http://soap.sforce.com/2006/04/metadata">
-    <version>67.0</version>
+	<!--<types>
+		<members>Showme</members>
+		<members>showmemockclass</members>
+		<members>showmetestclass</members>
+		<name>ApexClass</name>
+	</types>-->
+	<types>
+		<members>CRBCommunication</members>
+		<members>CRBCommunicationTest</members>
+		<name>ApexClass</name>
+	</types>
+	<types>
+		<members>CRBCommunication</members>
+		<name>AuraDefinitionBundle</name>
+	</types>
+	<types>
+		<members>Authkey</members>
+		<members>tokenapi</members>
+		<name>CustomLabel</name>
+	</types>
+	<types>
+		<members>Chatfunction</members>
+		<members>chatfunction1</members>
+		<name>RemoteSiteSetting</name>
+	</types>
+	<types>
+		<members>CRBCommunicationWidgetCss</members>
+		<name>StaticResource</name>
+	</types>
+	<version>67.0</version>
 </Package>
