@@ -3,161 +3,21 @@
                 access="global">
 
     <aura:attribute name="recordId" type="String" />
-    <aura:attribute name="messages" type="List" default="[]" />
-    <aura:attribute name="history" type="List" default="[]" />
-    <aura:attribute name="caseDisposition" type="String" />
+    <aura:attribute name="apiBaseUrl" type="String" />
     <aura:attribute name="orgId" type="String" />
     <aura:attribute name="patientId" type="String" />
     <aura:attribute name="caseId" type="String" />
-    <aura:attribute name="logoUrl" type="String" default="{!$Resource.ulablogo}" />
+    <aura:attribute name="frameReady" type="Boolean" default="false" />
+    <aura:attribute name="configReady" type="Boolean" default="false" />
 
-    <aura:attribute name="selectedPlanName" type="String" />
-    <aura:attribute name="selectedMessageId" type="String" />
-    <aura:attribute name="isSubmitModification" type="Boolean" default="true" />
-    <aura:attribute name="isSubmitReply" type="Boolean" default="true" />
-    <aura:attribute name="inputValue" type="String" default="" />
-    <aura:attribute name="composerDisabled" type="Boolean" default="true" />
+    <aura:handler name="init" value="{!this}" action="{!c.doInit}" />
 
-    <ltng:require styles="{!$Resource.CRBCommunicationWidgetCss}" />
-
-    <div class="msgw">
-        <div class="msgw-header">
-            <span class="msgw-header-title">CRB Communication</span>
-            <lightning:button label="Sync" onclick="{!c.submit}" class="msgw-sync" />
-        </div>
-
-        <div class="msgw-thread">
-            <aura:if isTrue="{!v.messages.length == 0 &amp;&amp; v.history.length == 0}">
-                <div class="msgw-empty">
-                    <div class="msgw-empty-title">No comment</div>
-                    <div class="msgw-empty-sub">You can send modification request to uAssist once your plan is ready to review</div>
-                </div>
-            </aura:if>
-
-            <aura:iteration items="{!v.messages}" var="row" indexVar="index">
-                <aura:renderIf isTrue="{!row.role == 'UASSIST TEAM'}">
-                    <div class="msgw-row msgw-row--left">
-                        <div class="msgw-head">
-                            <div class="msgw-avatar msgw-avatar--logo" style="{! '--crb-logo-url:url(' + v.logoUrl + ')' }"></div>
-                            <div class="msgw-meta">
-                                <div class="msgw-name">
-                                    <span>{!row.lastname} {!row.firstname}</span>
-                                    <span class="msgw-divider"></span>
-                                    <span class="msgw-role">{!row.role}</span>
-                                </div>
-                                <div class="msgw-time">{!row.messageTime}</div>
-                            </div>
-                        </div>
-                        <div class="msgw-bubble msgw-bubble--left">
-                            <aura:if isTrue="{!row.subject != null &amp;&amp; row.subject != ''}">
-                                <div class="msgw-subject">{!row.subject}</div>
-                            </aura:if>
-                            <aura:if isTrue="{!row.title != null &amp;&amp; row.title != ''}">
-                                <div class="msgw-title">{!row.title}</div>
-                            </aura:if>
-                            <div class="msgw-text">{!row.text}</div>
-                        </div>
-
-                        <aura:if isTrue="{!row.messageStatus == 'MESSAGE_SELECTED'}">
-                            <div class="msgw-status"><span class="msgw-status-icon">&#10003;</span>Selected</div>
-                        </aura:if>
-                        <aura:if isTrue="{!row.messageStatus == 'MESSAGE_REPLIED'}">
-                            <div class="msgw-status"><span class="msgw-status-icon">&#10003;</span>Replied</div>
-                        </aura:if>
-
-                        <aura:if isTrue="{!row.messageStatus == 'MESSAGE_MODIFICATION_REQUEST'}">
-                            <div class="msgw-actions">
-                                <lightning:button label="start modification request"
-                                                   class="msgw-btn msgw-btn--primary"
-                                                   value="{!row}"
-                                                   disabled="{!!row.buttonEnable}"
-                                                   onclick="{!c.startModification}" />
-                            </div>
-                        </aura:if>
-                        <aura:if isTrue="{!row.messageStatus == 'MESSAGE_WITH_REPLY'}">
-                            <div class="msgw-actions">
-                                <lightning:button label="Reply"
-                                                   class="msgw-btn msgw-btn--primary"
-                                                   value="{!row}"
-                                                   disabled="{!!row.buttonEnable}"
-                                                   onclick="{!c.startReply}" />
-                            </div>
-                        </aura:if>
-                    </div>
-                </aura:renderIf>
-                <aura:renderIf isTrue="{!row.role != 'UASSIST TEAM'}">
-                    <div class="msgw-row msgw-row--right">
-                        <div class="msgw-time msgw-time--right">{!row.messageTime}</div>
-                        <div class="msgw-bubble msgw-bubble--right">
-                            <aura:if isTrue="{!row.subject != null &amp;&amp; row.subject != ''}">
-                                <div class="msgw-subject">{!row.subject}</div>
-                            </aura:if>
-                            <aura:if isTrue="{!row.title != null &amp;&amp; row.title != ''}">
-                                <div class="msgw-title">{!row.title}</div>
-                            </aura:if>
-                            <div class="msgw-text">{!row.text}</div>
-                        </div>
-                        <aura:if isTrue="{!row.messageStatus == 'MESSAGE_MODIFICATION_REQUEST_SUBMITTED'}">
-                            <div class="msgw-status"><span class="msgw-status-icon">&#10003;</span>Modification request submitted</div>
-                        </aura:if>
-                    </div>
-                </aura:renderIf>
-            </aura:iteration>
-
-            <aura:iteration items="{!v.history}" var="row" indexVar="index">
-                <aura:renderIf isTrue="{!row.role == 'UASSIST TEAM'}">
-                    <div class="msgw-row msgw-row--left">
-                        <div class="msgw-head">
-                            <div class="msgw-avatar msgw-avatar--logo" style="{! '--crb-logo-url:url(' + v.logoUrl + ')' }"></div>
-                            <div class="msgw-meta">
-                                <div class="msgw-name">
-                                    <span>{!row.lastname} {!row.firstname}</span>
-                                    <span class="msgw-divider"></span>
-                                    <span class="msgw-role">{!row.role}</span>
-                                </div>
-                                <div class="msgw-time">{!row.messageTime}</div>
-                            </div>
-                        </div>
-                        <div class="msgw-bubble msgw-bubble--left">
-                            <aura:if isTrue="{!row.subject != null &amp;&amp; row.subject != ''}">
-                                <div class="msgw-subject">{!row.subject}</div>
-                            </aura:if>
-                            <aura:if isTrue="{!row.title != null &amp;&amp; row.title != ''}">
-                                <div class="msgw-title">{!row.title}</div>
-                            </aura:if>
-                            <div class="msgw-text">{!row.text}</div>
-                        </div>
-                    </div>
-                </aura:renderIf>
-                <aura:renderIf isTrue="{!row.role != 'UASSIST TEAM'}">
-                    <div class="msgw-row msgw-row--right">
-                        <div class="msgw-time msgw-time--right">{!row.messageTime}</div>
-                        <div class="msgw-bubble msgw-bubble--right">
-                            <aura:if isTrue="{!row.subject != null &amp;&amp; row.subject != ''}">
-                                <div class="msgw-subject">{!row.subject}</div>
-                            </aura:if>
-                            <aura:if isTrue="{!row.title != null &amp;&amp; row.title != ''}">
-                                <div class="msgw-title">{!row.title}</div>
-                            </aura:if>
-                            <div class="msgw-text">{!row.text}</div>
-                        </div>
-                    </div>
-                </aura:renderIf>
-            </aura:iteration>
-        </div>
-
-        <div class="msgw-composer">
-            <div class="msgw-composer-box">
-                <textarea class="msgw-input"
-                          rows="1"
-                          placeholder="Enter message or modification request here"
-                          disabled="{!v.composerDisabled}"
-                          value="{!v.inputValue}" />
-                <lightning:button class="msgw-send"
-                                   label="&#10148;"
-                                   disabled="{!v.composerDisabled || v.inputValue == ''}"
-                                   onclick="{!c.send}" />
-            </div>
-        </div>
+    <div class="crb-widget-host">
+        <iframe aura:id="widgetFrame"
+                class="crb-widget-frame"
+                src="{!$Resource.CRBWidgetHost + '/host.html'}"
+                sandbox="allow-scripts allow-same-origin allow-forms"
+                title="CRB Communication">
+        </iframe>
     </div>
 </aura:component>

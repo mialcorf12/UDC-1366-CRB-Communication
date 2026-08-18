@@ -31,6 +31,53 @@ global class CRBCommunication
         return result;
     }
 
+    /**
+     * Resolves the iframe-hosted widget's identifiers. apiBaseUrl is a
+     * placeholder — widget.js only uses it to build path strings; the actual
+     * network call never leaves the page (see proxyApiRequest / host.html's
+     * fetch() override), so no real domain is needed here.
+     */
+    @AuraEnabled
+    public static WidgetConfig getWidgetConfig(Id recordId)
+    {
+        WidgetConfig config = new WidgetConfig();
+        Ids ids = resolveIds(recordId);
+        config.orgId = String.valueOf(ids.orgId);
+        config.patientId = String.valueOf(ids.patientId);
+        config.caseId = String.valueOf(ids.caseId);
+        config.apiBaseUrl = 'https://crb-widget.internal';
+        return config;
+    }
+
+    /**
+     * Generic relay for the widget's intercepted fetch() calls: the iframe never
+     * talks to the external API directly (CORS) nor to a public REST endpoint
+     * (Salesforce platform auth would reject it) — it sends {method, path, body}
+     * over postMessage to this already-authenticated Aura/Apex channel instead.
+     * Only requests whose path matches this recordId's own org/patient/case are
+     * forwarded.
+     */
+    @AuraEnabled
+    public static ProxyResponse proxyApiRequest(Id recordId, String method, String path, String body)
+    {
+        Ids ids = resolveIds(recordId);
+        String expectedPrefix = '/org/' + ids.orgId + '/patients/' + ids.patientId + '/txplans/' + ids.caseId;
+        if (path == null || !path.contains(expectedPrefix)) {
+            throw new AuraHandledException('Path does not match this record');
+        }
+
+        HttpResponse upstream = forwardRequest(method, path, body);
+        ProxyResponse response = new ProxyResponse();
+        response.statusCode = upstream.getStatusCode();
+        response.body = upstream.getBody();
+        return response;
+    }
+
+    public static HttpResponse forwardRequest(String method, String path, String body)
+    {
+        return callApi(method, path, body);
+    }
+
     @AuraEnabled
     public static void postMessage(Id recordId, String txName, String content)
     {
@@ -247,6 +294,18 @@ global class CRBCommunication
         @AuraEnabled public String subject;
         @AuraEnabled public String title;
         @AuraEnabled public String text;
+    }
+
+    public class ProxyResponse {
+        @AuraEnabled public Integer statusCode;
+        @AuraEnabled public String body;
+    }
+
+    public class WidgetConfig {
+        @AuraEnabled public String orgId;
+        @AuraEnabled public String patientId;
+        @AuraEnabled public String caseId;
+        @AuraEnabled public String apiBaseUrl;
     }
 
     public class CaseMessagesResult {

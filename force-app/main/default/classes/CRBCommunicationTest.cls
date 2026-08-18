@@ -155,4 +155,50 @@ private class CRBCommunicationTest
         CRBCommunication.markRead(orderId, 1001L);
         Test.stopTest();
     }
+
+    @isTest
+    static void testGetWidgetConfig()
+    {
+        Id orderId = createTestOrder();
+
+        Test.startTest();
+        CRBCommunication.WidgetConfig config = CRBCommunication.getWidgetConfig(orderId);
+        Test.stopTest();
+
+        System.assertEquals('199040', config.orgId);
+        System.assertEquals('616614', config.caseId);
+        System.assertNotEquals(null, config.patientId);
+        System.assertNotEquals(null, config.apiBaseUrl);
+    }
+
+    @isTest
+    static void testProxyApiRequest_forwardsMatchingPath()
+    {
+        Id orderId = createTestOrder();
+        Test.setMock(HttpCalloutMock.class, new CalloutRouterMock());
+        CRBCommunication.WidgetConfig config = CRBCommunication.getWidgetConfig(orderId);
+        String path = '/shared/v1/org/' + config.orgId + '/patients/' + config.patientId + '/txplans/' + config.caseId + '/messages';
+
+        Test.startTest();
+        CRBCommunication.ProxyResponse response = CRBCommunication.proxyApiRequest(orderId, 'GET', path, null);
+        Test.stopTest();
+
+        System.assertEquals(200, response.statusCode);
+        System.assertNotEquals(null, response.body);
+    }
+
+    @isTest
+    static void testProxyApiRequest_rejectsMismatchedPath()
+    {
+        Id orderId = createTestOrder();
+
+        Test.startTest();
+        try {
+            CRBCommunication.proxyApiRequest(orderId, 'GET', '/shared/v1/org/000000/patients/0/txplans/0/messages', null);
+            System.assert(false, 'Expected an AuraHandledException for a mismatched path');
+        } catch (AuraHandledException e) {
+            // expected
+        }
+        Test.stopTest();
+    }
 }

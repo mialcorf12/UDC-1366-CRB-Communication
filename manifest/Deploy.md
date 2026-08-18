@@ -1,0 +1,1 @@
+Solo se deberia de actualizar los archivos widget.js/css dentro del static resource CRBWidgetHost.resource

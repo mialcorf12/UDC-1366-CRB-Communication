@@ -1,82 +1,101 @@
 ({
-    ENABLED_STATUSES: ["REVIEW_PLAN", "REVIEW_MODIFICATION", "SUBMITTED_TO_UASSIST", "ATTENTION_NEEDED", "PLACE_ORDER"],
-
-    refresh: function (component) {
-        var recordId = component.get("v.recordId");
-        var action = component.get("c.getMessagesFromApi");
-        action.setParams({ recordId: recordId });
-
+    registerMessageListener: function (component) {
         var helper = this;
-        action.setCallback(this, function (response) {
-            var state = response.getState();
-            if (state !== "SUCCESS") {
+        var handler = function (event) {
+            var frameEl = component.find("widgetFrame").getElement();
+            if (!frameEl || event.source !== frameEl.contentWindow) {
                 return;
             }
-            var result = response.getReturnValue() || {};
-            component.set("v.messages", result.messages || []);
-            component.set("v.history", result.history || []);
-            component.set("v.caseDisposition", result.caseDisposition);
-            component.set("v.orgId", result.orgId);
-            component.set("v.patientId", result.patientId);
-            component.set("v.caseId", result.caseId);
-            helper.updateComposerDisabled(component);
-        });
-        $A.enqueueAction(action);
-    },
-
-    postMessage: function (component, txName, content, onSuccess) {
-        var action = component.get("c.postMessage");
-        action.setParams({
-            recordId: component.get("v.recordId"),
-            txName: txName,
-            content: content
-        });
-        action.setCallback(this, function (response) {
-            if (response.getState() === "SUCCESS" && onSuccess) {
-                onSuccess();
+            var data = event.data;
+            if (!data || !data.type) {
+                return;
             }
-        });
-        $A.enqueueAction(action);
-    },
-
-    postModification: function (component, txName, content, isModification, onSuccess) {
-        var action = component.get("c.postModification");
-        action.setParams({
-            recordId: component.get("v.recordId"),
-            txName: txName,
-            content: content,
-            isModification: isModification
-        });
-        action.setCallback(this, function (response) {
-            if (response.getState() === "SUCCESS" && onSuccess) {
-                onSuccess();
+            if (data.type === "CRB_READY") {
+                component.set("v.frameReady", true);
+                helper.sendConfigWhenReady(component, event.origin);
+            } else if (data.type === "CRB_API_REQUEST") {
+                helper.respondToApiRequest(component, event.origin, data);
+            } else if (data.type === "CRB_ERROR") {
+                helper.logWidgetError(data);
             }
+        };
+        window.addEventListener("message", handler);
+        component._crbMessageHandler = handler;
+    },
+
+    loadWidgetConfig: function (component) {
+        var helper = this;
+        var action = component.get("c.getWidgetConfig");
+        action.setParams({ recordId: component.get("v.recordId") });
+        action.setCallback(this, function (response) {
+            if (response.getState() !== "SUCCESS") {
+                return;
+            }
+            var config = response.getReturnValue();
+            component.set("v.orgId", config.orgId);
+            component.set("v.patientId", config.patientId);
+            component.set("v.caseId", config.caseId);
+            component.set("v.apiBaseUrl", config.apiBaseUrl);
+            component.set("v.configReady", true);
+            helper.sendConfigWhenReady(component);
         });
         $A.enqueueAction(action);
     },
 
-    afterSend: function (component) {
-        component.set("v.inputValue", "");
-        component.set("v.selectedPlanName", null);
-        component.set("v.selectedMessageId", null);
-        this.updateComposerDisabled(component);
-        this.refresh(component);
-    },
-
-    // mirrors widget.js's composerDisabled()
-    updateComposerDisabled: function (component) {
-        var messages = component.get("v.messages") || [];
-        var caseDisposition = component.get("v.caseDisposition");
-        var selectedMessageId = component.get("v.selectedMessageId");
-
-        var disabled = false;
-        if (!selectedMessageId) {
-            disabled = true;
-        } else if (messages.length === 0) {
-            disabled = true;
-        } else if (this.ENABLED_STATUSES.indexOf(caseDisposition) === -1) {
-            disabled = true;
+    sendConfigWhenReady: function (component, targetOrigin) {
+        if (!component.get("v.frameReady") || !component.get("v.configReady")) {
+            return;
         }
-        component.set("v.composerDisabled", disabled);
+        var frameEl = component.find("widgetFrame").getElement();
+        if (!frameEl || !frameEl.contentWindow) {
+            return;
+        }
+        frameEl.contentWindow.postMessage({
+            type: "CRB_CONFIG",
+            orgId: component.get("v.orgId"),
+            patientId: component.get("v.patientId"),
+            caseId: component.get("v.caseId"),
+            apiBaseUrl: component.get("v.apiBaseUrl")
+        }, targetOrigin || window.location.origin);
+    },
+
+    respondToApiRequest: function (component, targetOrigin, data) {
+        var frameEl = component.find("widgetFrame").getElement();
+        var action = component.get("c.proxyApiRequest");
+        action.setParams({
+            recordId: component.get("v.recordId"),
+            method: data.method,
+            path: data.path,
+            body: data.body
+        });
+        action.setCallback(this, function (response) {
+            if (!frameEl || !frameEl.contentWindow) {
+                return;
+            }
+            if (response.getState() === "SUCCESS") {
+                var result = response.getReturnValue();
+                frameEl.contentWindow.postMessage({
+                    type: "CRB_API_RESPONSE",
+                    requestId: data.requestId,
+                    status: result.statusCode,
+                    body: result.body
+                }, targetOrigin);
+            } else {
+                var errors = response.getError();
+                var message = (errors && errors[0] && errors[0].message) || "Request failed";
+                frameEl.contentWindow.postMessage({
+                    type: "CRB_API_RESPONSE",
+                    requestId: data.requestId,
+                    status: 500,
+                    body: JSON.stringify({ error: message })
+                }, targetOrigin);
+            }
+        });
+        $A.enqueueAction(action);
+    },
+
+    logWidgetError: function (data) {
+        // eslint-disable-next-line no-console
+        console.error("CRBCommunication widget error", data);
     }
 })

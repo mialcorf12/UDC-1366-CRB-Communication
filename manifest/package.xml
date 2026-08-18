@@ -1,11 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Package xmlns="http://soap.sforce.com/2006/04/metadata">
-	<!--<types>
-		<members>Showme</members>
-		<members>showmemockclass</members>
-		<members>showmetestclass</members>
-		<name>ApexClass</name>
-	</types>-->
 	<types>
 		<members>CRBCommunication</members>
 		<members>CRBCommunicationTest</members>
@@ -26,7 +20,7 @@
 		<name>RemoteSiteSetting</name>
 	</types>
 	<types>
-		<members>CRBCommunicationWidgetCss</members>
+		<members>CRBWidgetHost</members>
 		<name>StaticResource</name>
 	</types>
 	<version>67.0</version>
