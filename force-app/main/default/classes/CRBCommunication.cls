@@ -147,7 +147,43 @@ global class CRBCommunication
 
     // ---- shared helpers -----------------------------------------------------
 
+    /**
+     * The widget can be placed on a uLab_Order__c or a uLab_Case__c record page.
+     * Order resolves through its related case and patient; Case reads the
+     * identifiers directly from its own fields.
+     */
     private static Ids resolveIds(Id recordId)
+    {
+        if (recordId != null && recordId.getSobjectType() == uLab_Case__c.SObjectType) {
+            return resolveIdsFromCase(recordId);
+        }
+        if (recordId == null || recordId.getSobjectType() != uLab_Order__c.SObjectType) {
+            throw new AuraHandledException('Unsupported record type');
+        }
+        return resolveIdsFromOrder(recordId);
+    }
+
+    private static Ids resolveIdsFromCase(Id recordId)
+    {
+        uLab_Case__c caseRec = [
+            Select id, uLab_Acct_Number__c, uLab_Case_Number__c, Patient_Portal_ID__c
+            from uLab_Case__c where id = :recordId limit 1
+        ];
+
+        Ids ids = new Ids();
+        ids.orgId = toInteger(caseRec.uLab_Acct_Number__c);
+        ids.caseId = toInteger(caseRec.uLab_Case_Number__c);
+        ids.patientId = toInteger(caseRec.Patient_Portal_ID__c);
+        return ids;
+    }
+
+    // Works whether the source field is Text or Number.
+    private static Integer toInteger(Object value)
+    {
+        return value == null ? null : Integer.valueOf(String.valueOf(value).trim());
+    }
+
+    private static Ids resolveIdsFromOrder(Id recordId)
     {
         uLab_Order__c orderRec = [Select id, uLab_Acct_Number__c, uLab_Case__c from uLab_Order__c where id = :recordId limit 1];
         uLab_Case__c caseRec = [Select id, Name, Patient_ID__c from uLab_Case__c where id = :orderRec.uLab_Case__c limit 1];

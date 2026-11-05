@@ -111,6 +111,73 @@ private class CRBCommunicationTest
         System.assertEquals(0, result.history.size());
     }
 
+    private static Id createTestCase()
+    {
+        Account acct = new Account(Name = 'Test Account', uLab_Acct_Number__c = 199040);
+        insert acct;
+
+        Patient__c patient = new Patient__c();
+        insert patient;
+
+        uLab_Case__c caseRec = new uLab_Case__c(
+            Name = '616614',
+            Account__c = acct.Id,
+            Patient_ID__c = patient.Id
+        );
+        insert caseRec;
+        return caseRec.Id;
+    }
+
+    @isTest
+    static void testGetWidgetConfig_fromCase()
+    {
+        Id caseId = createTestCase();
+        // Read the stored values back so the test holds whether the fields are
+        // plain or formula fields on uLab_Case__c.
+        uLab_Case__c stored = [
+            SELECT uLab_Acct_Number__c, uLab_Case_Number__c, Patient_Portal_ID__c
+            FROM uLab_Case__c WHERE Id = :caseId LIMIT 1
+        ];
+
+        Test.startTest();
+        CRBCommunication.WidgetConfig config = CRBCommunication.getWidgetConfig(caseId);
+        Test.stopTest();
+
+        System.assertEquals(String.valueOf(stored.uLab_Acct_Number__c), config.orgId);
+        System.assertEquals(String.valueOf(stored.uLab_Case_Number__c), config.caseId);
+        System.assertEquals(String.valueOf(stored.Patient_Portal_ID__c), config.patientId);
+    }
+
+    @isTest
+    static void testGetMessagesFromApi_fromCase()
+    {
+        Id caseId = createTestCase();
+        Test.setMock(HttpCalloutMock.class, new CalloutRouterMock());
+
+        Test.startTest();
+        CRBCommunication.CaseMessagesResult result = CRBCommunication.getMessagesFromApi(caseId);
+        Test.stopTest();
+
+        System.assertEquals(null, result.errorMessage, 'Should not have an error: ' + result.errorMessage);
+        System.assertEquals(2, result.messages.size());
+    }
+
+    @isTest
+    static void testResolveIds_unsupportedRecordType()
+    {
+        Account acct = new Account(Name = 'Not a case or order');
+        insert acct;
+
+        Test.startTest();
+        try {
+            CRBCommunication.getWidgetConfig(acct.Id);
+            System.assert(false, 'Expected an exception for an unsupported record type');
+        } catch (AuraHandledException e) {
+            System.assert(true);
+        }
+        Test.stopTest();
+    }
+
     @isTest
     static void testPostMessage()
     {
