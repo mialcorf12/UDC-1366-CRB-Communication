@@ -171,34 +171,241 @@ private class CRBCommunicationTest
         System.assertNotEquals(null, config.apiBaseUrl);
     }
 
-    @isTest
-    static void testProxyApiRequest_forwardsMatchingPath()
+    // ---- proxyApiRequest ----------------------------------------------------
+
+    private static final Blob PNG_BYTES = Blob.valueOf('PNGDATA');
+
+    private class ProxyMock implements HttpCalloutMock
     {
-        Id orderId = createTestOrder();
-        Test.setMock(HttpCalloutMock.class, new CalloutRouterMock());
-        CRBCommunication.WidgetConfig config = CRBCommunication.getWidgetConfig(orderId);
-        String path = '/shared/v1/org/' + config.orgId + '/patients/' + config.patientId + '/txplans/' + config.caseId + '/messages';
+        public List<HttpRequest> seen = new List<HttpRequest>();
 
-        Test.startTest();
-        CRBCommunication.ProxyResponse response = CRBCommunication.proxyApiRequest(orderId, 'GET', path, null);
-        Test.stopTest();
+        public HTTPResponse respond(HTTPRequest req)
+        {
+            seen.add(req);
+            HttpResponse res = new HttpResponse();
+            res.setStatusCode(200);
+            String endpoint = req.getEndpoint();
 
-        System.assertEquals(200, response.statusCode);
-        System.assertNotEquals(null, response.body);
+            if (endpoint == System.Label.tokenapi) {
+                res.setHeader('Content-Type', 'application/json');
+                res.setBody(TOKEN_RESPONSE);
+            } else if (endpoint.contains('/redirect/')) {
+                res.setStatusCode(302);
+                res.setHeader('Location', 'https://files.example.com/blob.png');
+            } else if (endpoint.startsWith('https://files.example.com') || endpoint.contains('/download/')) {
+                res.setHeader('Content-Type', 'image/png');
+                res.setBodyAsBlob(PNG_BYTES);
+            } else if (endpoint.contains('/huge/')) {
+                res.setHeader('Content-Type', 'image/png');
+                res.setHeader('Content-Length', '9999999');
+                res.setBodyAsBlob(Blob.valueOf('x'));
+            } else {
+                res.setHeader('Content-Type', 'application/json');
+                res.setBody('{"results":{}}');
+            }
+            return res;
+        }
+
+        public HttpRequest lastTo(String fragment)
+        {
+            HttpRequest found;
+            for (HttpRequest r : seen) {
+                if (r.getEndpoint().contains(fragment)) {
+                    found = r;
+                }
+            }
+            return found;
+        }
     }
 
-    @isTest
-    static void testProxyApiRequest_rejectsMismatchedPath()
+    private static String requestJson(String method, String path)
     {
-        Id orderId = createTestOrder();
+        return System.JSON.serialize(new Map<String, Object>{ 'method' => method, 'path' => path });
+    }
 
-        Test.startTest();
+    private static String uploadJson(String path)
+    {
+        return System.JSON.serialize(new Map<String, Object>{
+            'method' => 'POST',
+            'path' => path,
+            'fields' => new Map<String, String>{ 'case_id' => '616614' },
+            'file' => new Map<String, String>{ 'name' => 'scan.png', 'type' => 'image/png' }
+        });
+    }
+
+    private static String casePath(CRBCommunication.WidgetConfig c, String version)
+    {
+        return '/shared/' + version + '/org/' + c.orgId + '/patients/' + c.patientId + '/txplans/' + c.caseId + '/messages';
+    }
+
+    private static String filesPath(CRBCommunication.WidgetConfig c)
+    {
+        return '/file-mgmt/v1/org/' + c.orgId + '/files/attachment/';
+    }
+
+    private static void assertRejected(Id orderId, String json, String fileBase64)
+    {
         try {
-            CRBCommunication.proxyApiRequest(orderId, 'GET', '/shared/v1/org/000000/patients/0/txplans/0/messages', null);
-            System.assert(false, 'Expected an AuraHandledException for a mismatched path');
+            CRBCommunication.proxyApiRequest(orderId, json, fileBase64);
+            System.assert(false, 'Expected an AuraHandledException for: ' + json);
         } catch (AuraHandledException e) {
             // expected
         }
+    }
+
+    @isTest
+    static void testProxyApiRequest_forwardsAllowedFamilies()
+    {
+        Id orderId = createTestOrder();
+        ProxyMock mock = new ProxyMock();
+        Test.setMock(HttpCalloutMock.class, mock);
+        CRBCommunication.WidgetConfig c = CRBCommunication.getWidgetConfig(orderId);
+        String orchestration = '/shared/v1/org/' + c.orgId + '/orchestration/patients/' + c.patientId + '/txplans/' + c.caseId + '/v2/messages/';
+
+        Test.startTest();
+        List<CRBCommunication.ProxyResponse> responses = new List<CRBCommunication.ProxyResponse>{
+            CRBCommunication.proxyApiRequest(orderId, requestJson('GET', casePath(c, 'v1')), null),
+            CRBCommunication.proxyApiRequest(orderId, requestJson('GET', casePath(c, 'v2') + '?limit=20'), null),
+            CRBCommunication.proxyApiRequest(orderId, requestJson('POST', orchestration), null),
+            CRBCommunication.proxyApiRequest(orderId, requestJson('DELETE', filesPath(c) + '55/'), null),
+            CRBCommunication.proxyApiRequest(orderId, requestJson('PUT', '/order-mgmt/v2/org/' + c.orgId + '/orders/123'), null)
+        };
         Test.stopTest();
+
+        for (CRBCommunication.ProxyResponse r : responses) {
+            System.assertEquals(200, r.statusCode);
+            System.assertEquals('{"results":{}}', r.body);
+            System.assertEquals(null, r.bodyBase64);
+        }
+        HttpRequest upstream = mock.lastTo('/orders/123');
+        System.assertEquals('PUT', upstream.getMethod());
+        System.assert(upstream.getHeader('Authorization').startsWith('Bearer mock-token-123'));
+        System.assertEquals(null, upstream.getHeader('user-id'), 'Placeholder label must not be sent');
+    }
+
+    @isTest
+    static void testProxyApiRequest_rejectsDisallowedRequests()
+    {
+        Id orderId = createTestOrder();
+        Test.setMock(HttpCalloutMock.class, new ProxyMock());
+        CRBCommunication.WidgetConfig c = CRBCommunication.getWidgetConfig(orderId);
+        String org = c.orgId;
+
+        Test.startTest();
+        assertRejected(orderId, requestJson('GET', '/shared/v1/org/000000/patients/0/txplans/0/messages'), null);
+        assertRejected(orderId, requestJson('GET', casePath(c, 'v2').replace('/messages', '/../../other')), null);
+        assertRejected(orderId, requestJson('GET', casePath(c, 'v2') + '%2e%2e/x'), null);
+        assertRejected(orderId, requestJson('GET', '/file-mgmt/v1/org/' + org + '/files/attachment//x'), null);
+        assertRejected(orderId, requestJson('GET', '/file-mgmt/v1/org/000000/files/attachment/1/'), null);
+        assertRejected(orderId, requestJson('GET', '/order-mgmt/v2/org/' + org + '/orders/123'), null);
+        assertRejected(orderId, requestJson('PUT', '/order-mgmt/v2/org/' + org + '/orders/abc'), null);
+        assertRejected(orderId, requestJson('PUT', '/order-mgmt/v2/org/' + org + '/orders/1/../2'), null);
+        assertRejected(orderId, requestJson('PATCH', casePath(c, 'v2')), null);
+        assertRejected(orderId, requestJson('GET', 'shared/v2/relative'), null);
+        assertRejected(orderId, requestJson('GET', casePath(c, 'v2') + ' x'), null);
+        assertRejected(orderId, requestJson('GET', ''), null);
+        assertRejected(orderId, 'not json', null);
+        assertRejected(orderId, requestJson('GET', filesPath(c) + '1/'), 'QUJD'); // file on non-POST
+        assertRejected(orderId, requestJson('POST', filesPath(c) + 'upload/'), 'QUJD'); // file metadata missing
+        assertRejected(orderId, uploadJson(filesPath(c) + 'upload/'), 'abc'); // not valid base64 length
+        Test.stopTest();
+    }
+
+    @isTest
+    static void testProxyApiRequest_uploadsMultipartForEveryPaddingCase()
+    {
+        Id orderId = createTestOrder();
+        ProxyMock mock = new ProxyMock();
+        Test.setMock(HttpCalloutMock.class, mock);
+        CRBCommunication.WidgetConfig c = CRBCommunication.getWidgetConfig(orderId);
+        String path = filesPath(c) + 'upload/';
+
+        Test.startTest();
+        for (String content : new List<String>{ 'abc', 'abcd', 'abcde' }) { // 3n, 3n+1, 3n+2 bytes
+            CRBCommunication.ProxyResponse r = CRBCommunication.proxyApiRequest(
+                orderId, uploadJson(path), EncodingUtil.base64Encode(Blob.valueOf(content))
+            );
+            System.assertEquals(200, r.statusCode);
+
+            HttpRequest upstream = mock.lastTo('/upload/');
+            System.assert(upstream.getHeader('Content-Type').startsWith('multipart/form-data; boundary=----CRB'));
+            String sent = upstream.getBodyAsBlob().toString();
+            System.assert(sent.contains('name="case_id"\r\n\r\n616614\r\n'), sent);
+            System.assert(sent.contains('filename="scan.png"'), sent);
+            System.assert(sent.contains('Content-Type: image/png'), sent);
+            System.assert(sent.contains('\r\n\r\n' + content + '\r\n--'), 'File bytes must be intact: ' + sent);
+            System.assert(sent.endsWith('--\r\n'), sent);
+        }
+        Test.stopTest();
+    }
+
+    @isTest
+    static void testProxyApiRequest_rejectsOversizedUpload()
+    {
+        Id orderId = createTestOrder();
+        ProxyMock mock = new ProxyMock();
+        Test.setMock(HttpCalloutMock.class, mock);
+        CRBCommunication.WidgetConfig c = CRBCommunication.getWidgetConfig(orderId);
+        String big = EncodingUtil.base64Encode(Blob.valueOf('a'.repeat(CRBCommunication.MAX_UPLOAD_BYTES + 100)));
+
+        Test.startTest();
+        CRBCommunication.ProxyResponse r = CRBCommunication.proxyApiRequest(orderId, uploadJson(filesPath(c) + 'upload/'), big);
+        Test.stopTest();
+
+        System.assertEquals(413, r.statusCode);
+        System.assert(r.body.contains('file_too_large'));
+        System.assertEquals(null, mock.lastTo('/upload/'), 'Nothing must be sent upstream');
+    }
+
+    @isTest
+    static void testProxyApiRequest_returnsBinaryAsBase64()
+    {
+        Id orderId = createTestOrder();
+        Test.setMock(HttpCalloutMock.class, new ProxyMock());
+        CRBCommunication.WidgetConfig c = CRBCommunication.getWidgetConfig(orderId);
+
+        Test.startTest();
+        CRBCommunication.ProxyResponse r = CRBCommunication.proxyApiRequest(orderId, requestJson('GET', filesPath(c) + 'download/9/?t=abc'), null);
+        Test.stopTest();
+
+        System.assertEquals(200, r.statusCode);
+        System.assertEquals('image/png', r.contentType);
+        System.assertEquals(EncodingUtil.base64Encode(PNG_BYTES), r.bodyBase64);
+        System.assertEquals(null, r.body);
+    }
+
+    @isTest
+    static void testProxyApiRequest_followsRedirectWithoutCredentials()
+    {
+        Id orderId = createTestOrder();
+        ProxyMock mock = new ProxyMock();
+        Test.setMock(HttpCalloutMock.class, mock);
+        CRBCommunication.WidgetConfig c = CRBCommunication.getWidgetConfig(orderId);
+
+        Test.startTest();
+        CRBCommunication.ProxyResponse r = CRBCommunication.proxyApiRequest(orderId, requestJson('GET', filesPath(c) + 'redirect/9/'), null);
+        Test.stopTest();
+
+        System.assertEquals(200, r.statusCode);
+        System.assertEquals(EncodingUtil.base64Encode(PNG_BYTES), r.bodyBase64);
+        HttpRequest first = mock.lastTo('/redirect/');
+        HttpRequest second = mock.lastTo('files.example.com');
+        System.assertNotEquals(null, first.getHeader('Authorization'));
+        System.assertEquals(null, second.getHeader('Authorization'), 'Credentials must not leave the API host');
+    }
+
+    @isTest
+    static void testProxyApiRequest_rejectsHugeDownload()
+    {
+        Id orderId = createTestOrder();
+        Test.setMock(HttpCalloutMock.class, new ProxyMock());
+        CRBCommunication.WidgetConfig c = CRBCommunication.getWidgetConfig(orderId);
+
+        Test.startTest();
+        CRBCommunication.ProxyResponse r = CRBCommunication.proxyApiRequest(orderId, requestJson('GET', filesPath(c) + 'huge/1/'), null);
+        Test.stopTest();
+
+        System.assertEquals(413, r.statusCode);
+        System.assertEquals(null, r.bodyBase64);
     }
 }

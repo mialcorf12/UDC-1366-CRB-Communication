@@ -1,12 +1,12 @@
 .THIS .crb-widget-host {
     width: 536px;
     max-width: 100%;
-    height: 640px;
+    height: 720px;
 }
 
 .THIS .crb-widget-frame {
     width: 100%;
-    height: 640px;
+    height: 720px;
     border: 0;
     display: block;
 }

@@ -6,11 +6,18 @@
 /jira
 **/.DS_Store
 
-
+# ULAB ORDER 49191N
 # https://ulab--staging.sandbox.lightning.force.com/lightning/r/uLab_Order__c/a0FRK00000Dr9dZ2AR/view
-# uLab_Acct_Number__c = 616212
-# Related_Case_Number__c = 638818
-# Patient_Portal_ID__c = 86647
+# uLab_Acct_Number__c = 199040
+# Related_Case_Number__c = 642557
+# Patient_Portal_ID__c = 90270
 
 # https://ulab--staging.sandbox.lightning.force.com/lightning/r/uLab_Order__c/a0FRK000001HkPF2A0/view
 # https://ulab--staging.sandbox.lightning.force.com/lightning/r/uLab_Order__c/a0F5200000TWrHkEAL/view
+
+
+
+# ulab Case 642557
+# uLab_Acct_Number__c = 199040
+# uLab_Case_Number__c = 642557
+# Patient_Portal_ID__c = 90270

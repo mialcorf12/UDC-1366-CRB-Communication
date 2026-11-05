@@ -52,25 +52,53 @@ global class CRBCommunication
     /**
      * Generic relay for the widget's intercepted fetch() calls: the iframe never
      * talks to the external API directly (CORS) nor to a public REST endpoint
-     * (Salesforce platform auth would reject it) — it sends {method, path, body}
-     * over postMessage to this already-authenticated Aura/Apex channel instead.
-     * Only requests whose path matches this recordId's own org/patient/case are
-     * forwarded.
+     * (Salesforce platform auth would reject it) — it sends the request over
+     * postMessage to this already-authenticated Aura/Apex channel instead.
+     *
+     * requestJson: {method, path, body, fields}. When fileBase64 is present the
+     * call is a multipart upload (file metadata in requestJson.file, bytes in
+     * fileBase64, passed separately to avoid holding the payload twice in heap).
+     * Only paths allowed by isAllowedPath() for this recordId's own
+     * org/patient/case are forwarded.
      */
     @AuraEnabled
-    public static ProxyResponse proxyApiRequest(Id recordId, String method, String path, String body)
+    public static ProxyResponse proxyApiRequest(Id recordId, String requestJson, String fileBase64)
     {
+        ProxyRequest request;
+        try {
+            request = (ProxyRequest) System.JSON.deserialize(requestJson, ProxyRequest.class);
+        } catch (Exception e) {
+            throw new AuraHandledException('Invalid proxy request');
+        }
+        if (request == null || String.isBlank(request.method) || String.isBlank(request.path)) {
+            throw new AuraHandledException('Invalid proxy request');
+        }
+
+        String method = request.method.toUpperCase();
         Ids ids = resolveIds(recordId);
-        String expectedPrefix = '/org/' + ids.orgId + '/patients/' + ids.patientId + '/txplans/' + ids.caseId;
-        if (path == null || !path.contains(expectedPrefix)) {
+        if (!isAllowedPath(method, request.path, ids)) {
             throw new AuraHandledException('Path does not match this record');
         }
 
-        HttpResponse upstream = forwardRequest(method, path, body);
-        ProxyResponse response = new ProxyResponse();
-        response.statusCode = upstream.getStatusCode();
-        response.body = upstream.getBody();
-        return response;
+        Blob bodyBlob = null;
+        String contentType = null;
+        String body = request.body;
+        if (String.isNotBlank(fileBase64)) {
+            if (method != 'POST' || request.file == null) {
+                throw new AuraHandledException('Invalid proxy request');
+            }
+            // 3 base64 chars carry ~2.25 bytes; reject before decoding anything.
+            if (fileBase64.length() > (MAX_UPLOAD_BYTES / 3) * 4 + 4) {
+                return errorResponse(413, 'file_too_large');
+            }
+            String boundary = '----CRB' + EncodingUtil.convertToHex(Crypto.generateAesKey(128));
+            bodyBlob = buildMultipart(boundary, request.fields, request.file, fileBase64);
+            contentType = 'multipart/form-data; boundary=' + boundary;
+            body = null;
+        }
+
+        HttpResponse upstream = sendProxied(method, request.path, body, bodyBlob, contentType);
+        return toProxyResponse(upstream);
     }
 
     public static HttpResponse forwardRequest(String method, String path, String body)
@@ -166,6 +194,214 @@ global class CRBCommunication
         }
         Http http = new Http();
         return http.send(req);
+    }
+
+    // ---- widget proxy helpers -----------------------------------------------
+
+    private static final Integer MAX_REDIRECTS = 3;
+    // Sync Apex heap is 6 MB and the payload is copied several times
+    // (base64 param, combined base64, Blob), so uploads stay small.
+    // Tune after measuring in the sandbox.
+    @TestVisible private static final Integer MAX_UPLOAD_BYTES = 1000000;
+    @TestVisible private static final Integer MAX_DOWNLOAD_BYTES = 2500000;
+    private static final String USER_ID_PLACEHOLDER = 'REPLACE_';
+
+    /**
+     * Strict allowlist of the API paths the widget may reach for this record.
+     * Everything is anchored with startsWith on this record's own org/patient/case.
+     */
+    private static Boolean isAllowedPath(String method, String path, Ids ids)
+    {
+        if (ids == null || ids.orgId == null || ids.patientId == null || ids.caseId == null) {
+            return false;
+        }
+        if (String.isBlank(path) || !path.startsWith('/')) {
+            return false;
+        }
+        String p = path.substringBefore('?');
+        String lower = p.toLowerCase();
+        if (p.contains('//') || lower.contains('..') || lower.contains('%2e') ||
+            lower.contains('%2f') || lower.contains('%5c') ||
+            !Pattern.matches('[A-Za-z0-9._~!$&\'()*+,;=:@%/-]+', p)) {
+            return false;
+        }
+
+        String org = String.valueOf(ids.orgId);
+        String caseTail = '/org/' + org + '/patients/' + ids.patientId + '/txplans/' + ids.caseId + '/';
+        String orchestration = '/shared/v1/org/' + org + '/orchestration/patients/' + ids.patientId + '/txplans/' + ids.caseId + '/';
+        String files = '/file-mgmt/v1/org/' + org + '/files/attachment/';
+        String order = '/order-mgmt/v2/org/' + org + '/orders/';
+
+        if (p.startsWith('/shared/v1' + caseTail) || p.startsWith('/shared/v2' + caseTail) || p.startsWith(orchestration)) {
+            return method == 'GET' || method == 'POST' || method == 'PUT' || method == 'DELETE';
+        }
+        if (p.startsWith(files)) {
+            return method == 'GET' || method == 'POST' || method == 'DELETE';
+        }
+        if (p.startsWith(order)) {
+            // org-scoped only: the order id is not verifiable against this record here
+            return method == 'PUT' && Pattern.matches('[0-9]+', p.substring(order.length()));
+        }
+        return false;
+    }
+
+    private static String apiUserId()
+    {
+        String value = System.Label.CRBApiUserId;
+        return (String.isBlank(value) || value.startsWith(USER_ID_PLACEHOLDER)) ? null : value;
+    }
+
+    private static String hostOf(String url)
+    {
+        return new Url(url).getHost();
+    }
+
+    private static String resolveLocation(String current, String location)
+    {
+        if (String.isBlank(location)) {
+            return null;
+        }
+        if (location.startsWith('https://')) {
+            return location;
+        }
+        if (location.startsWith('/') && !location.startsWith('//')) {
+            Url u = new Url(current);
+            return u.getProtocol() + '://' + u.getHost() + location;
+        }
+        return null;
+    }
+
+    /**
+     * Sends the proxied call with the m2m bearer token and the configured user-id.
+     * Only GET follows redirects (attachment downloads 302 to a presigned URL);
+     * credentials are never forwarded to a different host.
+     */
+    private static HttpResponse sendProxied(String method, String path, String body, Blob bodyBlob, String contentType)
+    {
+        String token = getBearerToken();
+        String userId = apiUserId();
+        String url = API_DOMAIN + path;
+        String originHost = hostOf(url);
+        HttpResponse res;
+
+        for (Integer hop = 0; hop <= MAX_REDIRECTS; hop++) {
+            Boolean trusted = hostOf(url) == originHost;
+            HttpRequest req = new HttpRequest();
+            req.setEndpoint(url);
+            req.setMethod(method);
+            req.setTimeout(120000);
+            if (trusted) {
+                req.setHeader('Authorization', 'Bearer ' + token);
+                if (userId != null) {
+                    req.setHeader('user-id', userId);
+                }
+            }
+            if (bodyBlob != null) {
+                req.setHeader('Content-Type', contentType);
+                req.setBodyAsBlob(bodyBlob);
+            } else if (body != null) {
+                req.setHeader('Content-Type', 'application/json');
+                req.setBody(body);
+            }
+
+            res = new Http().send(req);
+
+            Integer code = res.getStatusCode();
+            Boolean isRedirect = code == 301 || code == 302 || code == 303 || code == 307 || code == 308;
+            if (method != 'GET' || !isRedirect || hop == MAX_REDIRECTS) {
+                break;
+            }
+            String next = resolveLocation(url, res.getHeader('Location'));
+            if (next == null) {
+                break;
+            }
+            url = next;
+        }
+        return res;
+    }
+
+    private static Boolean isBinaryContent(String contentType)
+    {
+        if (String.isBlank(contentType)) {
+            return false;
+        }
+        String ct = contentType.toLowerCase();
+        return !(ct.contains('json') || ct.startsWith('text/') || ct.contains('xml'));
+    }
+
+    private static ProxyResponse toProxyResponse(HttpResponse upstream)
+    {
+        ProxyResponse response = new ProxyResponse();
+        response.statusCode = upstream.getStatusCode();
+        response.contentType = upstream.getHeader('Content-Type');
+        if (!isBinaryContent(response.contentType)) {
+            response.body = upstream.getBody();
+            return response;
+        }
+        String length = upstream.getHeader('Content-Length');
+        if (String.isNotBlank(length) && length.isNumeric() && Long.valueOf(length) > MAX_DOWNLOAD_BYTES) {
+            return errorResponse(413, 'file_too_large');
+        }
+        Blob bytes = upstream.getBodyAsBlob();
+        if (bytes.size() > MAX_DOWNLOAD_BYTES) {
+            return errorResponse(413, 'file_too_large');
+        }
+        response.bodyBase64 = EncodingUtil.base64Encode(bytes);
+        return response;
+    }
+
+    private static ProxyResponse errorResponse(Integer statusCode, String code)
+    {
+        ProxyResponse response = new ProxyResponse();
+        response.statusCode = statusCode;
+        response.body = '{"status":"Failed","error":"' + code + '"}';
+        return response;
+    }
+
+    private static String headerSafe(String value)
+    {
+        return value == null ? '' : value.replace('"', '').replace('\r', '').replace('\n', '');
+    }
+
+    /**
+     * Binary-safe multipart/form-data builder. Blob has no concat, so the parts
+     * are joined as base64: the head is padded to a multiple of 3 bytes (spaces
+     * after the Content-Type value, which headers tolerate), and the last base64
+     * group of the file is re-encoded together with the footer.
+     */
+    private static Blob buildMultipart(String boundary, Map<String, String> fields, ProxyFile file, String fileBase64)
+    {
+        String crlf = '\r\n';
+        String head = '';
+        if (fields != null) {
+            for (String key : fields.keySet()) {
+                String value = fields.get(key);
+                head += '--' + boundary + crlf +
+                    'Content-Disposition: form-data; name="' + headerSafe(key) + '"' + crlf + crlf +
+                    (value == null ? '' : value) + crlf;
+            }
+        }
+        String partHead = '--' + boundary + crlf +
+            'Content-Disposition: form-data; name="attachment"; filename="' + headerSafe(file.name) + '"' + crlf +
+            'Content-Type: ' + headerSafe(String.isBlank(file.type) ? 'application/octet-stream' : file.type);
+        String blank = crlf + crlf;
+
+        Integer remainder = Math.mod(Blob.valueOf(head + partHead + blank).size(), 3);
+        if (remainder != 0) {
+            partHead += ' '.repeat(3 - remainder);
+        }
+        Blob headBlob = Blob.valueOf(head + partHead + blank);
+
+        Integer length = fileBase64.length();
+        if (Math.mod(length, 4) != 0) {
+            throw new AuraHandledException('Invalid file encoding');
+        }
+        String prefix = fileBase64.left(length - 4);
+        Blob lastBytes = EncodingUtil.base64Decode(fileBase64.right(4));
+        Blob footer = Blob.valueOf(crlf + '--' + boundary + '--' + crlf);
+        Blob tail = EncodingUtil.convertFromHex(EncodingUtil.convertToHex(lastBytes) + EncodingUtil.convertToHex(footer));
+
+        return EncodingUtil.base64Decode(EncodingUtil.base64Encode(headBlob) + prefix + EncodingUtil.base64Encode(tail));
     }
 
     private static List<CaseMessageRow> mapThread(List<cls_current_thread> thread, List<cls_users_avatar> usersAvatar)
@@ -296,9 +532,24 @@ global class CRBCommunication
         @AuraEnabled public String text;
     }
 
+    private class ProxyRequest {
+        public String method;
+        public String path;
+        public String body;
+        public Map<String, String> fields;
+        public ProxyFile file;
+    }
+
+    private class ProxyFile {
+        public String name;
+        public String type;
+    }
+
     public class ProxyResponse {
         @AuraEnabled public Integer statusCode;
         @AuraEnabled public String body;
+        @AuraEnabled public String bodyBase64;
+        @AuraEnabled public String contentType;
     }
 
     public class WidgetConfig {

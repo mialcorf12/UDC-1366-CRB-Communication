@@ -10,6 +10,11 @@
 		<name>AuraDefinitionBundle</name>
 	</types>
 	<types>
+		<members>uLab_Case__c.Patient_Portal_ID__c</members>
+		<members>uLab_Case__c.uLab_Acct_Number__c</members>
+		<name>CustomField</name>
+	</types>
+	<types>
 		<members>Authkey</members>
 		<members>tokenapi</members>
 		<name>CustomLabel</name>
@@ -23,5 +28,5 @@
 		<members>CRBWidgetHost</members>
 		<name>StaticResource</name>
 	</types>
-	<version>67.0</version>
+	<version>68.0</version>
 </Package>

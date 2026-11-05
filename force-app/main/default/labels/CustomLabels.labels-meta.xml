@@ -14,4 +14,11 @@
         <shortDescription>tokenapi</shortDescription>
         <value>https://ulab-ciam-qa.okta.com/oauth2/aus98pux4mElRwPhG5d7/v1/token</value>
     </labels>
+    <labels>
+        <fullName>CRBApiUserId</fullName>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription>API user-id header sent by the CRB widget proxy</shortDescription>
+        <value>0056g000004o43WAAQ</value>
+    </labels>
 </CustomLabels>

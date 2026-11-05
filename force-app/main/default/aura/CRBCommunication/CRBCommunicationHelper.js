@@ -62,11 +62,19 @@
     respondToApiRequest: function (component, targetOrigin, data) {
         var frameEl = component.find("widgetFrame").getElement();
         var action = component.get("c.proxyApiRequest");
+        // The file bytes travel as their own param so Apex does not hold the
+        // payload twice (JSON + deserialized copy) in its 6 MB heap.
+        var file = data.file || null;
         action.setParams({
             recordId: component.get("v.recordId"),
-            method: data.method,
-            path: data.path,
-            body: data.body
+            requestJson: JSON.stringify({
+                method: data.method,
+                path: data.path,
+                body: data.body,
+                fields: data.fields || null,
+                file: file ? { name: file.name, type: file.type } : null
+            }),
+            fileBase64: file ? file.base64 : null
         });
         action.setCallback(this, function (response) {
             if (!frameEl || !frameEl.contentWindow) {
@@ -78,7 +86,9 @@
                     type: "CRB_API_RESPONSE",
                     requestId: data.requestId,
                     status: result.statusCode,
-                    body: result.body
+                    body: result.body,
+                    bodyBase64: result.bodyBase64,
+                    contentType: result.contentType
                 }, targetOrigin);
             } else {
                 var errors = response.getError();
