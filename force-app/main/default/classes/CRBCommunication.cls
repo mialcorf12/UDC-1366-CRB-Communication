@@ -185,20 +185,12 @@ global class CRBCommunication
 
     private static Ids resolveIdsFromOrder(Id recordId)
     {
-        uLab_Order__c orderRec = [Select id, uLab_Acct_Number__c, uLab_Case__c from uLab_Order__c where id = :recordId limit 1];
-        uLab_Case__c caseRec = [Select id, Name, Patient_ID__c from uLab_Case__c where id = :orderRec.uLab_Case__c limit 1];
-        Patient__c patientRec = [Select id, Name from Patient__c where id = :caseRec.Patient_ID__c limit 1];
+        uLab_Order__c orderRec = [Select id, uLab_Acct_Number__c, Related_Case_Number__c, Patient_Portal_ID__c from uLab_Order__c where id = :recordId limit 1];
 
         Ids ids = new Ids();
-        if (patientRec != null && patientRec.Name != null) {
-            ids.patientId = Integer.valueOf(patientRec.Name.replace('PID-', ''));
-        }
-        if (caseRec != null && caseRec.Name != null) {
-            ids.caseId = Integer.valueOf(caseRec.Name);
-        }
-        if (orderRec != null && orderRec.uLab_Acct_Number__c != null) {
-            ids.orgId = Integer.valueOf(orderRec.uLab_Acct_Number__c);
-        }
+        ids.patientId = Integer.valueOf(orderRec.Patient_Portal_ID__c);
+        ids.caseId = Integer.valueOf(orderRec.Related_Case_Number__c);
+        ids.orgId = Integer.valueOf(orderRec.uLab_Acct_Number__c);
         return ids;
     }
 
