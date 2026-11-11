@@ -16,7 +16,7 @@
         <iframe aura:id="widgetFrame"
                 class="crb-widget-frame"
                 src="{!$Resource.CRBWidgetHost + '/host.html'}"
-                sandbox="allow-scripts allow-same-origin allow-forms"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
                 title="CRB Communication">
         </iframe>
     </div>

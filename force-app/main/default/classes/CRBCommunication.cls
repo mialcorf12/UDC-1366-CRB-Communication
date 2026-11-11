@@ -1,6 +1,13 @@
 global class CRBCommunication
 {
     private static final String API_DOMAIN = 'https://apis.qa.aligneroem.com';
+    // Hosts that front the same API gateway. The API returns absolute download_path URLs on
+    // the second host; those are rewritten onto API_DOMAIN so the Remote Site Setting and the
+    // credentials stay bound to a single host. Extend per environment.
+    @TestVisible private static final Set<String> API_HOST_ALIASES = new Set<String>{
+        new Url(API_DOMAIN).getHost().toLowerCase(),
+        'apis.qa.udesign.cloud'
+    };
 
     @AuraEnabled
     public static CaseMessagesResult getMessagesFromApi(Id recordId)
@@ -76,7 +83,10 @@ global class CRBCommunication
 
         String method = request.method.toUpperCase();
         Ids ids = resolveIds(recordId);
+        request.path = normalizePath(request.path);
         if (!isAllowedPath(method, request.path, ids)) {
+            // Query string (download ticket) is intentionally left out of the log.
+            System.debug(LoggingLevel.WARN, 'CRB proxy rejected path: ' + method + ' ' + request.path.substringBefore('?'));
             throw new AuraHandledException('Path does not match this record');
         }
 
@@ -98,7 +108,8 @@ global class CRBCommunication
         }
 
         HttpResponse upstream = sendProxied(method, request.path, body, bodyBlob, contentType);
-        return toProxyResponse(upstream);
+        Boolean expectBinary = method == 'GET' && request.path.substringBefore('?').toLowerCase().contains('/download/');
+        return toProxyResponse(upstream, expectBinary);
     }
 
     public static HttpResponse forwardRequest(String method, String path, String body)
@@ -273,6 +284,35 @@ global class CRBCommunication
         return false;
     }
 
+    /**
+     * The API returns absolute download URLs. When the host is one of API_HOST_ALIASES the
+     * URL is reduced to '/path[?query]' (the ?t= ticket is kept) so it can go through
+     * isAllowedPath and be sent to API_DOMAIN. Any other host is returned untouched and
+     * is rejected later because it does not start with '/'.
+     */
+    private static String normalizePath(String path)
+    {
+        if (String.isBlank(path) || !path.startsWith('https://')) {
+            return path;
+        }
+        try {
+            Url parsed = new Url(path);
+            Integer port = parsed.getPort();
+            if (!API_HOST_ALIASES.contains(parsed.getHost().toLowerCase()) ||
+                parsed.getUserInfo() != null ||
+                (port != -1 && port != 443)) {
+                return path;
+            }
+            String result = parsed.getPath();
+            if (String.isNotBlank(parsed.getQuery())) {
+                result += '?' + parsed.getQuery();
+            }
+            return result;
+        } catch (Exception e) {
+            return path;
+        }
+    }
+
     private static String apiUserId()
     {
         String value = System.Label.CRBApiUserId;
@@ -348,21 +388,24 @@ global class CRBCommunication
         return res;
     }
 
-    private static Boolean isBinaryContent(String contentType)
+    // A blank Content-Type is binary only when a download was requested and succeeded,
+    // otherwise getBody() would corrupt the bytes.
+    private static Boolean isBinaryContent(String contentType, Boolean binaryFallback)
     {
         if (String.isBlank(contentType)) {
-            return false;
+            return binaryFallback;
         }
         String ct = contentType.toLowerCase();
         return !(ct.contains('json') || ct.startsWith('text/') || ct.contains('xml'));
     }
 
-    private static ProxyResponse toProxyResponse(HttpResponse upstream)
+    private static ProxyResponse toProxyResponse(HttpResponse upstream, Boolean expectBinary)
     {
         ProxyResponse response = new ProxyResponse();
         response.statusCode = upstream.getStatusCode();
         response.contentType = upstream.getHeader('Content-Type');
-        if (!isBinaryContent(response.contentType)) {
+        Boolean binaryFallback = expectBinary == true && response.statusCode >= 200 && response.statusCode < 300;
+        if (!isBinaryContent(response.contentType, binaryFallback)) {
             response.body = upstream.getBody();
             return response;
         }

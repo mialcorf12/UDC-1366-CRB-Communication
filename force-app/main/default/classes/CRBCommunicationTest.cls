@@ -259,6 +259,9 @@ private class CRBCommunicationTest
             } else if (endpoint.contains('/redirect/')) {
                 res.setStatusCode(302);
                 res.setHeader('Location', 'https://files.example.com/blob.png');
+            } else if (endpoint.contains('/blankct/')) {
+                // download served without any Content-Type header
+                res.setBodyAsBlob(PNG_BYTES);
             } else if (endpoint.startsWith('https://files.example.com') || endpoint.contains('/download/')) {
                 res.setHeader('Content-Type', 'image/png');
                 res.setBodyAsBlob(PNG_BYTES);
@@ -474,5 +477,100 @@ private class CRBCommunicationTest
 
         System.assertEquals(413, r.statusCode);
         System.assertEquals(null, r.bodyBase64);
+    }
+
+    private static String attachmentsPath(CRBCommunication.WidgetConfig c)
+    {
+        return '/shared/v1/org/' + c.orgId + '/orchestration/patients/' + c.patientId + '/txplans/' + c.caseId + '/attachments/';
+    }
+
+    @isTest
+    static void testProxyApiRequest_rewritesAbsoluteAliasUrlsOntoApiDomain()
+    {
+        Id orderId = createTestOrder();
+        ProxyMock mock = new ProxyMock();
+        Test.setMock(HttpCalloutMock.class, mock);
+        CRBCommunication.WidgetConfig c = CRBCommunication.getWidgetConfig(orderId);
+        String tail = attachmentsPath(c) + '77/download/?t=abc123';
+
+        Test.startTest();
+        CRBCommunication.ProxyResponse viaAlias = CRBCommunication.proxyApiRequest(orderId, requestJson('GET', 'https://apis.qa.udesign.cloud' + tail), null);
+        CRBCommunication.ProxyResponse viaApiHost = CRBCommunication.proxyApiRequest(orderId, requestJson('GET', 'https://apis.qa.aligneroem.com' + tail), null);
+        Test.stopTest();
+
+        for (CRBCommunication.ProxyResponse r : new List<CRBCommunication.ProxyResponse>{ viaAlias, viaApiHost }) {
+            System.assertEquals(200, r.statusCode);
+            System.assertEquals(EncodingUtil.base64Encode(PNG_BYTES), r.bodyBase64);
+            System.assertEquals(null, r.body);
+        }
+        for (HttpRequest req : mock.seen) {
+            if (req.getEndpoint() != System.Label.tokenapi) {
+                System.assert(!req.getEndpoint().contains('udesign.cloud'), 'Alias host must be rewritten onto API_DOMAIN');
+            }
+        }
+        HttpRequest sent = mock.lastTo('/attachments/77/download/');
+        System.assertEquals('https://apis.qa.aligneroem.com' + tail, sent.getEndpoint(), 'Ticket query string must be preserved');
+        System.assertNotEquals(null, sent.getHeader('Authorization'));
+    }
+
+    @isTest
+    static void testProxyApiRequest_rejectsUntrustedAbsoluteUrls()
+    {
+        Id orderId = createTestOrder();
+        ProxyMock mock = new ProxyMock();
+        Test.setMock(HttpCalloutMock.class, mock);
+        CRBCommunication.WidgetConfig c = CRBCommunication.getWidgetConfig(orderId);
+        String tail = attachmentsPath(c) + '77/download/?t=abc123';
+        String otherOrg = '/shared/v1/org/999999/orchestration/patients/' + c.patientId + '/txplans/' + c.caseId + '/attachments/77/download/';
+
+        Test.startTest();
+        assertRejected(orderId, requestJson('GET', 'https://evil.example.com' + tail), null);
+        assertRejected(orderId, requestJson('GET', 'https://apis.qa.udesign.cloud.evil.example.com' + tail), null);
+        assertRejected(orderId, requestJson('GET', 'https://user@apis.qa.udesign.cloud' + tail), null);
+        assertRejected(orderId, requestJson('GET', 'https://apis.qa.udesign.cloud:8443' + tail), null);
+        assertRejected(orderId, requestJson('GET', 'http://apis.qa.udesign.cloud' + tail), null);
+        assertRejected(orderId, requestJson('GET', 'https://apis.qa.udesign.cloud' + otherOrg), null);
+        Test.stopTest();
+
+        System.assertEquals(0, mock.seen.size(), 'No callout may leave for rejected paths');
+    }
+
+    @isTest
+    static void testProxyApiRequest_allowsOrchestrationAttachmentRoutes()
+    {
+        Id orderId = createTestOrder();
+        ProxyMock mock = new ProxyMock();
+        Test.setMock(HttpCalloutMock.class, mock);
+        CRBCommunication.WidgetConfig c = CRBCommunication.getWidgetConfig(orderId);
+        String base = attachmentsPath(c);
+        String fileBase64 = EncodingUtil.base64Encode(Blob.valueOf('abc'));
+
+        Test.startTest();
+        CRBCommunication.ProxyResponse upload = CRBCommunication.proxyApiRequest(orderId, uploadJson(base + 'upload/'), fileBase64);
+        CRBCommunication.ProxyResponse remove = CRBCommunication.proxyApiRequest(orderId, requestJson('DELETE', base + '55/'), null);
+        CRBCommunication.ProxyResponse download = CRBCommunication.proxyApiRequest(orderId, requestJson('GET', base + '55/download/?t=abc'), null);
+        Test.stopTest();
+
+        System.assertEquals(200, upload.statusCode);
+        System.assertEquals(200, remove.statusCode);
+        System.assertEquals(EncodingUtil.base64Encode(PNG_BYTES), download.bodyBase64);
+        System.assertEquals('POST', mock.lastTo('/attachments/upload/').getMethod());
+        System.assertEquals('DELETE', mock.lastTo('/attachments/55/').getMethod());
+    }
+
+    @isTest
+    static void testProxyApiRequest_blankContentTypeDownloadIsBase64()
+    {
+        Id orderId = createTestOrder();
+        Test.setMock(HttpCalloutMock.class, new ProxyMock());
+        CRBCommunication.WidgetConfig c = CRBCommunication.getWidgetConfig(orderId);
+
+        Test.startTest();
+        CRBCommunication.ProxyResponse r = CRBCommunication.proxyApiRequest(orderId, requestJson('GET', attachmentsPath(c) + 'blankct/download/9/?t=abc'), null);
+        Test.stopTest();
+
+        System.assertEquals(200, r.statusCode);
+        System.assertEquals(EncodingUtil.base64Encode(PNG_BYTES), r.bodyBase64);
+        System.assertEquals(null, r.body);
     }
 }
