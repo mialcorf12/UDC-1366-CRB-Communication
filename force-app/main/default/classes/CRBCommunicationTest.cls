@@ -241,6 +241,7 @@ private class CRBCommunicationTest
     // ---- proxyApiRequest ----------------------------------------------------
 
     private static final Blob PNG_BYTES = Blob.valueOf('PNGDATA');
+    private static final Blob PDF_BYTES = Blob.valueOf('%PDF-1.4 synthetic');
 
     private class ProxyMock implements HttpCalloutMock
     {
@@ -259,6 +260,9 @@ private class CRBCommunicationTest
             } else if (endpoint.contains('/redirect/')) {
                 res.setStatusCode(302);
                 res.setHeader('Location', 'https://files.example.com/blob.png');
+            } else if (endpoint.contains('/uassist-summary/')) {
+                res.setHeader('Content-Type', 'application/pdf');
+                res.setBodyAsBlob(PDF_BYTES);
             } else if (endpoint.contains('/blankct/')) {
                 // download served without any Content-Type header
                 res.setBodyAsBlob(PNG_BYTES);
@@ -321,6 +325,56 @@ private class CRBCommunicationTest
         } catch (AuraHandledException e) {
             // expected
         }
+    }
+
+    // orderId__c may be Text or Number in the org: seed it with the matching type.
+    private static void seedOrderNumber(Id orderId, String value)
+    {
+        Schema.DisplayType fieldType = Schema.SObjectType.uLab_Order__c.fields.getMap().get('orderId__c').getDescribe().getType();
+        uLab_Order__c order = new uLab_Order__c(Id = orderId);
+        order.put('orderId__c', fieldType == Schema.DisplayType.String ? (Object) value : (Object) Decimal.valueOf(value));
+        update order;
+    }
+
+    @isTest
+    static void testProxyApiRequest_uassistSummaryOfOwnOrderIsBase64Pdf()
+    {
+        Id orderId = createTestOrder();
+        seedOrderNumber(orderId, '1345890');
+        Test.setMock(HttpCalloutMock.class, new ProxyMock());
+        CRBCommunication.WidgetConfig c = CRBCommunication.getWidgetConfig(orderId);
+        String path = '/order-mgmt/v2/org/' + c.orgId + '/orders/1345890/uassist-summary/';
+
+        Test.startTest();
+        CRBCommunication.ProxyResponse absolute = CRBCommunication.proxyApiRequest(
+            orderId, requestJson('GET', 'https://apis.qa.udesign.cloud' + path), null);
+        CRBCommunication.ProxyResponse relative = CRBCommunication.proxyApiRequest(orderId, requestJson('GET', path), null);
+        Test.stopTest();
+
+        for (CRBCommunication.ProxyResponse r : new List<CRBCommunication.ProxyResponse>{ absolute, relative }) {
+            System.assertEquals(200, r.statusCode);
+            System.assertEquals('application/pdf', r.contentType);
+            System.assertEquals(EncodingUtil.base64Encode(PDF_BYTES), r.bodyBase64);
+        }
+    }
+
+    @isTest
+    static void testProxyApiRequest_uassistSummaryOfOtherOrderIsRejected()
+    {
+        Id orderId = createTestOrder();
+        seedOrderNumber(orderId, '1345890');
+        ProxyMock mock = new ProxyMock();
+        Test.setMock(HttpCalloutMock.class, mock);
+        CRBCommunication.WidgetConfig c = CRBCommunication.getWidgetConfig(orderId);
+        String base = '/order-mgmt/v2/org/' + c.orgId + '/orders/';
+
+        Test.startTest();
+        assertRejected(orderId, requestJson('GET', base + '999/uassist-summary/'), null);
+        assertRejected(orderId, requestJson('GET', base + '1345890/other/'), null);
+        assertRejected(orderId, requestJson('POST', base + '1345890/uassist-summary/'), null);
+        Test.stopTest();
+
+        System.assertEquals(null, mock.lastTo('/uassist-summary/'), 'No upstream call for rejected paths');
     }
 
     @isTest

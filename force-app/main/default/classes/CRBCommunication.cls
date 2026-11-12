@@ -89,6 +89,11 @@ global class CRBCommunication
             System.debug(LoggingLevel.WARN, 'CRB proxy rejected path: ' + method + ' ' + request.path.substringBefore('?'));
             throw new AuraHandledException('Path does not match this record');
         }
+        // The uAssist summary may hold patient data: its order id must belong to this record.
+        String summaryOrderId = uassistSummaryOrderId(method, request.path, ids);
+        if (summaryOrderId != null && !isOrderOfRecord(recordId, summaryOrderId)) {
+            throw new AuraHandledException('Path does not match this record');
+        }
 
         Blob bodyBlob = null;
         String contentType = null;
@@ -278,8 +283,53 @@ global class CRBCommunication
             return method == 'GET' || method == 'POST' || method == 'DELETE';
         }
         if (p.startsWith(order)) {
-            // org-scoped only: the order id is not verifiable against this record here
-            return method == 'PUT' && Pattern.matches('[0-9]+', p.substring(order.length()));
+            String orderTail = p.substring(order.length());
+            if (method == 'PUT') {
+                // org-scoped only: the order id is not verifiable against this record here
+                return Pattern.matches('[0-9]+', orderTail);
+            }
+            // GET summary: the order id is verified against the record in proxyApiRequest
+            return method == 'GET' && Pattern.matches('[0-9]+/uassist-summary/', orderTail);
+        }
+        return false;
+    }
+
+    /** Returns the order id of a GET .../orders/{id}/uassist-summary/ path, or null for any other request. */
+    private static String uassistSummaryOrderId(String method, String path, Ids ids)
+    {
+        if (method != 'GET' || ids == null || ids.orgId == null) {
+            return null;
+        }
+        String prefix = '/order-mgmt/v2/org/' + ids.orgId + '/orders/';
+        String p = path.substringBefore('?');
+        if (!p.startsWith(prefix)) {
+            return null;
+        }
+        String tail = p.substring(prefix.length());
+        return Pattern.matches('[0-9]+/uassist-summary/', tail) ? tail.substringBefore('/') : null;
+    }
+
+    /**
+     * True when orderId matches uLab_Order__c.orderId__c of this record: the order itself,
+     * or any order of the case when the widget sits on a case page.
+     */
+    private static Boolean isOrderOfRecord(Id recordId, String orderId)
+    {
+        List<uLab_Order__c> candidates;
+        if (recordId.getSobjectType() == uLab_Case__c.SObjectType) {
+            candidates = [SELECT orderId__c FROM uLab_Order__c WHERE uLab_Case__c = :recordId LIMIT 200];
+        } else {
+            candidates = [SELECT orderId__c FROM uLab_Order__c WHERE Id = :recordId LIMIT 1];
+        }
+        for (uLab_Order__c candidate : candidates) {
+            if (candidate.orderId__c == null) {
+                continue;
+            }
+            // Works for Text or Number; a Number may render as "123.00".
+            String value = String.valueOf(candidate.orderId__c).trim().replaceAll('\\.0+$', '');
+            if (value == orderId) {
+                return true;
+            }
         }
         return false;
     }
