@@ -405,6 +405,12 @@ private class CRBCommunicationTest
         System.assertEquals('PUT', upstream.getMethod());
         System.assert(upstream.getHeader('Authorization').startsWith('Bearer mock-token-123'));
         System.assertEquals(null, upstream.getHeader('user-id'), 'Placeholder label must not be sent');
+        System.assertEquals('SFDC', upstream.getHeader('X-Client-App'));
+        System.assertEquals(UserInfo.getUserId(), upstream.getHeader('X-User-Id'));
+        System.assertEquals(UserInfo.getUserEmail(), upstream.getHeader('X-User-Email'));
+        List<User> me = [SELECT UserRole.Name FROM User WHERE Id = :UserInfo.getUserId()];
+        String expectedRole = me[0].UserRole == null ? null : me[0].UserRole.Name;
+        System.assertEquals(expectedRole, upstream.getHeader('X-User-Role'), 'Role header must match the running user role (omitted when none)');
     }
 
     @isTest
@@ -516,6 +522,10 @@ private class CRBCommunicationTest
         HttpRequest second = mock.lastTo('files.example.com');
         System.assertNotEquals(null, first.getHeader('Authorization'));
         System.assertEquals(null, second.getHeader('Authorization'), 'Credentials must not leave the API host');
+        System.assertEquals('SFDC', first.getHeader('X-Client-App'));
+        System.assertEquals(null, second.getHeader('X-Client-App'), 'Client headers must not leave the API host');
+        System.assertEquals(null, second.getHeader('X-User-Id'), 'User headers must not leave the API host');
+        System.assertEquals(null, second.getHeader('X-User-Email'), 'User headers must not leave the API host');
     }
 
     @isTest

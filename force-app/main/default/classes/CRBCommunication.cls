@@ -232,6 +232,7 @@ global class CRBCommunication
         req.setEndpoint(API_DOMAIN + path);
         req.setMethod(method);
         req.setHeader('Authorization', 'Bearer ' + token);
+        applyClientHeaders(req);
         if (body != null) {
             req.setHeader('Content-Type', 'application/json');
             req.setBody(body);
@@ -369,6 +370,36 @@ global class CRBCommunication
         return (String.isBlank(value) || value.startsWith(USER_ID_PLACEHOLDER)) ? null : value;
     }
 
+    private static String cachedUserRole;
+    private static Boolean userRoleLoaded = false;
+
+    // Role name of the logged-in user (null when the user has no role); queried once per transaction.
+    private static String currentUserRoleName()
+    {
+        if (!userRoleLoaded) {
+            List<User> rows = [SELECT UserRole.Name FROM User WHERE Id = :UserInfo.getUserId() LIMIT 1];
+            cachedUserRole = (rows.isEmpty() || rows[0].UserRole == null) ? null : rows[0].UserRole.Name;
+            userRoleLoaded = true;
+        }
+        return cachedUserRole;
+    }
+
+    // Client/user identification headers; resolved server-side so the widget cannot spoof them.
+    // Blank values are omitted rather than sent empty.
+    private static void applyClientHeaders(HttpRequest req)
+    {
+        req.setHeader('X-Client-App', 'SFDC');
+        req.setHeader('X-User-Id', UserInfo.getUserId());
+        String email = UserInfo.getUserEmail();
+        if (String.isNotBlank(email)) {
+            req.setHeader('X-User-Email', email);
+        }
+        String role = currentUserRoleName();
+        if (String.isNotBlank(role)) {
+            req.setHeader('X-User-Role', role);
+        }
+    }
+
     private static String hostOf(String url)
     {
         return new Url(url).getHost();
@@ -390,7 +421,7 @@ global class CRBCommunication
     }
 
     /**
-     * Sends the proxied call with the m2m bearer token and the configured user-id.
+     * Sends the proxied call with the m2m bearer token, the configured user-id and the X-Client-App/X-User-* headers.
      * Only GET follows redirects (attachment downloads 302 to a presigned URL);
      * credentials are never forwarded to a different host.
      */
@@ -413,6 +444,7 @@ global class CRBCommunication
                 if (userId != null) {
                     req.setHeader('user-id', userId);
                 }
+                applyClientHeaders(req);
             }
             if (bodyBlob != null) {
                 req.setHeader('Content-Type', contentType);
