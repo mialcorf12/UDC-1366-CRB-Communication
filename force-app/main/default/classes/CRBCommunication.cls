@@ -114,7 +114,10 @@ global class CRBCommunication
 
         HttpResponse upstream = sendProxied(method, request.path, body, bodyBlob, contentType);
         Boolean expectBinary = method == 'GET' && request.path.substringBefore('?').toLowerCase().contains('/download/');
-        return toProxyResponse(upstream, expectBinary);
+        ProxyResponse response = toProxyResponse(upstream, expectBinary);
+        // Mirror of the headers Apex sent upstream, so they are inspectable in the browser Network tab.
+        response.clientHeaders = clientHeaderValues();
+        return response;
     }
 
     public static HttpResponse forwardRequest(String method, String path, String body)
@@ -386,17 +389,28 @@ global class CRBCommunication
 
     // Client/user identification headers; resolved server-side so the widget cannot spoof them.
     // Blank values are omitted rather than sent empty.
-    private static void applyClientHeaders(HttpRequest req)
+    private static Map<String, String> clientHeaderValues()
     {
-        req.setHeader('X-Client-App', 'SFDC');
-        req.setHeader('X-User-Id', UserInfo.getUserId());
+        Map<String, String> values = new Map<String, String>{
+            'X-Client-App' => 'SFDC',
+            'X-User-Id' => UserInfo.getUserId()
+        };
         String email = UserInfo.getUserEmail();
         if (String.isNotBlank(email)) {
-            req.setHeader('X-User-Email', email);
+            values.put('X-User-Email', email);
         }
         String role = currentUserRoleName();
         if (String.isNotBlank(role)) {
-            req.setHeader('X-User-Role', role);
+            values.put('X-User-Role', role);
+        }
+        return values;
+    }
+
+    private static void applyClientHeaders(HttpRequest req)
+    {
+        Map<String, String> values = clientHeaderValues();
+        for (String name : values.keySet()) {
+            req.setHeader(name, values.get(name));
         }
     }
 
@@ -703,6 +717,7 @@ global class CRBCommunication
         @AuraEnabled public String body;
         @AuraEnabled public String bodyBase64;
         @AuraEnabled public String contentType;
+        @AuraEnabled public Map<String, String> clientHeaders;
     }
 
     public class WidgetConfig {

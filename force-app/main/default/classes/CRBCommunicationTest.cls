@@ -411,6 +411,12 @@ private class CRBCommunicationTest
         List<User> me = [SELECT UserRole.Name FROM User WHERE Id = :UserInfo.getUserId()];
         String expectedRole = me[0].UserRole == null ? null : me[0].UserRole.Name;
         System.assertEquals(expectedRole, upstream.getHeader('X-User-Role'), 'Role header must match the running user role (omitted when none)');
+        for (CRBCommunication.ProxyResponse r : responses) {
+            System.assertEquals('SFDC', r.clientHeaders.get('X-Client-App'), 'Headers must be mirrored in the Aura response');
+            System.assertEquals(UserInfo.getUserId(), r.clientHeaders.get('X-User-Id'));
+            System.assertEquals(UserInfo.getUserEmail(), r.clientHeaders.get('X-User-Email'));
+            System.assertEquals(expectedRole, r.clientHeaders.get('X-User-Role'));
+        }
     }
 
     @isTest
