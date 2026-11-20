@@ -1,7 +1,9 @@
 ({
     registerMessageListener: function (component) {
         var helper = this;
-        var handler = function (event) {
+        // Native window events run outside the Aura lifecycle: without $A.getCallback the
+        // $A.enqueueAction calls made from here stay queued until the next user interaction.
+        var handler = $A.getCallback(function (event) {
             var frameEl = component.find("widgetFrame").getElement();
             if (!frameEl || event.source !== frameEl.contentWindow) {
                 return;
@@ -18,7 +20,7 @@
             } else if (data.type === "CRB_ERROR") {
                 helper.logWidgetError(data);
             }
-        };
+        });
         window.addEventListener("message", handler);
         component._crbMessageHandler = handler;
     },
