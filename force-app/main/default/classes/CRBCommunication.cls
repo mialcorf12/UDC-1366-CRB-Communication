@@ -108,6 +108,7 @@ global class CRBCommunication
             }
             String boundary = '----CRB' + EncodingUtil.convertToHex(Crypto.generateAesKey(128));
             bodyBlob = buildMultipart(boundary, request.fields, request.file, fileBase64);
+            fileBase64 = null; // release the base64 copy before the callout and response handling
             contentType = 'multipart/form-data; boundary=' + boundary;
             body = null;
         }
@@ -247,11 +248,12 @@ global class CRBCommunication
     // ---- widget proxy helpers -----------------------------------------------
 
     private static final Integer MAX_REDIRECTS = 3;
-    // Sync Apex heap is 6 MB and the payload is copied several times
-    // (base64 param, combined base64, Blob), so uploads stay small.
-    // Tune after measuring in the sandbox.
-    @TestVisible private static final Integer MAX_UPLOAD_BYTES = 1000000;
-    @TestVisible private static final Integer MAX_DOWNLOAD_BYTES = 2500000;
+    // Upper bound is Aura's 4,194,304-char limit per action param (3 MB of file = ~4.0M base64
+    // chars). Sync Apex heap is 6 MB and the payload is copied (base64 param, combined base64,
+    // Blob), so the effective limit may be lower: validate with real files in the sandbox and
+    // lower it if a LimitException shows up.
+    @TestVisible private static final Integer MAX_UPLOAD_BYTES = 3145725;
+    @TestVisible private static final Integer MAX_DOWNLOAD_BYTES = 3145725;
     private static final String USER_ID_PLACEHOLDER = 'REPLACE_';
 
     /**
@@ -563,12 +565,19 @@ global class CRBCommunication
         if (Math.mod(length, 4) != 0) {
             throw new AuraHandledException('Invalid file encoding');
         }
-        String prefix = fileBase64.left(length - 4);
         Blob lastBytes = EncodingUtil.base64Decode(fileBase64.right(4));
         Blob footer = Blob.valueOf(crlf + '--' + boundary + '--' + crlf);
-        Blob tail = EncodingUtil.convertFromHex(EncodingUtil.convertToHex(lastBytes) + EncodingUtil.convertToHex(footer));
+        String tailBase64 = EncodingUtil.base64Encode(
+            EncodingUtil.convertFromHex(EncodingUtil.convertToHex(lastBytes) + EncodingUtil.convertToHex(footer))
+        );
+        String headBase64 = EncodingUtil.base64Encode(headBlob);
+        headBlob = null;
+        lastBytes = null;
+        footer = null;
 
-        return EncodingUtil.base64Decode(EncodingUtil.base64Encode(headBlob) + prefix + EncodingUtil.base64Encode(tail));
+        // No named copy of the file's base64 prefix: left() is an expression temporary, so only
+        // the combined string is alive next to the caller's param when decoding.
+        return EncodingUtil.base64Decode(headBase64 + fileBase64.left(length - 4) + tailBase64);
     }
 
     private static List<CaseMessageRow> mapThread(List<cls_current_thread> thread, List<cls_users_avatar> usersAvatar)

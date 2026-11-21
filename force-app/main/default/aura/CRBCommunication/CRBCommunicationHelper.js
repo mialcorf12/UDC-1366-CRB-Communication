@@ -67,6 +67,21 @@
         // The file bytes travel as their own param so Apex does not hold the
         // payload twice (JSON + deserialized copy) in its 6 MB heap.
         var file = data.file || null;
+        // Mirror of CRBCommunication.MAX_UPLOAD_BYTES (3,000,000), expressed in base64 chars.
+        // Aura rejects any single param over 4,194,304 chars with a systemError before Apex
+        // runs, so oversized files are answered here with the same 413 payload Apex returns.
+        var MAX_UPLOAD_BASE64_LENGTH = Math.floor(3145725 / 3) * 4 + 4;
+        if (file && file.base64 && file.base64.length > MAX_UPLOAD_BASE64_LENGTH) {
+            if (frameEl && frameEl.contentWindow) {
+                frameEl.contentWindow.postMessage({
+                    type: "CRB_API_RESPONSE",
+                    requestId: data.requestId,
+                    status: 413,
+                    body: JSON.stringify({ error: "file_too_large" })
+                }, targetOrigin);
+            }
+            return;
+        }
         action.setParams({
             recordId: component.get("v.recordId"),
             requestJson: JSON.stringify({

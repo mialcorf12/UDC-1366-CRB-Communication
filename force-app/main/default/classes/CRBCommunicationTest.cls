@@ -482,7 +482,9 @@ private class CRBCommunicationTest
         ProxyMock mock = new ProxyMock();
         Test.setMock(HttpCalloutMock.class, mock);
         CRBCommunication.WidgetConfig c = CRBCommunication.getWidgetConfig(orderId);
-        String big = EncodingUtil.base64Encode(Blob.valueOf('a'.repeat(CRBCommunication.MAX_UPLOAD_BYTES + 100)));
+        // Built directly as base64 text (4 chars = 3 bytes): going through Blob would blow the
+        // 6 MB test heap now that the cap is ~3 MB. Rejected before any decoding anyway.
+        String big = 'AAAA'.repeat(CRBCommunication.MAX_UPLOAD_BYTES / 3 + 2);
 
         Test.startTest();
         CRBCommunication.ProxyResponse r = CRBCommunication.proxyApiRequest(orderId, uploadJson(filesPath(c) + 'upload/'), big);
