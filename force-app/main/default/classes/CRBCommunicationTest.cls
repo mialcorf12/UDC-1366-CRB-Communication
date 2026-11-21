@@ -53,7 +53,8 @@ private class CRBCommunicationTest
         insert acct;
 
         // Patient__c.Name is an auto-number ("PID-xxxx"); requery to read the generated value.
-        Patient__c patient = new Patient__c();
+        // Portal_Pt_ID__c feeds the Patient_Portal_ID__c formulas; resolveIdsFromOrder parses it as an Integer.
+        Patient__c patient = new Patient__c(Portal_Pt_ID__c = '7001');
         insert patient;
         patient = [SELECT Id, Name FROM Patient__c WHERE Id = :patient.Id LIMIT 1];
 
@@ -404,7 +405,8 @@ private class CRBCommunicationTest
         HttpRequest upstream = mock.lastTo('/orders/123');
         System.assertEquals('PUT', upstream.getMethod());
         System.assert(upstream.getHeader('Authorization').startsWith('Bearer mock-token-123'));
-        System.assertEquals(null, upstream.getHeader('user-id'), 'Placeholder label must not be sent');
+        String configuredUserId = System.Label.CRBApiUserId;
+        System.assertEquals(String.isBlank(configuredUserId) ? null : configuredUserId, upstream.getHeader('user-id'), 'user-id must mirror the CRBApiUserId label');
         System.assertEquals('SFDC', upstream.getHeader('X-Client-App'));
         System.assertEquals(UserInfo.getUserId(), upstream.getHeader('X-User-Id'));
         System.assertEquals(UserInfo.getUserEmail(), upstream.getHeader('X-User-Email'));
@@ -627,7 +629,14 @@ private class CRBCommunicationTest
         System.assertEquals(200, remove.statusCode);
         System.assertEquals(EncodingUtil.base64Encode(PNG_BYTES), download.bodyBase64);
         System.assertEquals('POST', mock.lastTo('/attachments/upload/').getMethod());
-        System.assertEquals('DELETE', mock.lastTo('/attachments/55/').getMethod());
+        // The download GET also targets /attachments/55/..., so match the DELETE by method, not by last endpoint hit.
+        Boolean deleteSeen = false;
+        for (HttpRequest r : mock.seen) {
+            if (r.getMethod() == 'DELETE' && r.getEndpoint().endsWith('/attachments/55/')) {
+                deleteSeen = true;
+            }
+        }
+        System.assert(deleteSeen, 'Expected an upstream DELETE to /attachments/55/');
     }
 
     @isTest
