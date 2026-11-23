@@ -348,7 +348,7 @@ private class CRBCommunicationTest
 
         Test.startTest();
         CRBCommunication.ProxyResponse absolute = CRBCommunication.proxyApiRequest(
-            orderId, requestJson('GET', 'https://apis.qa.udesign.cloud' + path), null);
+            orderId, requestJson('GET', 'https://apis.udesign.cloud' + path), null);
         CRBCommunication.ProxyResponse relative = CRBCommunication.proxyApiRequest(orderId, requestJson('GET', path), null);
         Test.stopTest();
 
@@ -568,8 +568,8 @@ private class CRBCommunicationTest
         String tail = attachmentsPath(c) + '77/download/?t=abc123';
 
         Test.startTest();
-        CRBCommunication.ProxyResponse viaAlias = CRBCommunication.proxyApiRequest(orderId, requestJson('GET', 'https://apis.qa.udesign.cloud' + tail), null);
-        CRBCommunication.ProxyResponse viaApiHost = CRBCommunication.proxyApiRequest(orderId, requestJson('GET', 'https://apis.qa.aligneroem.com' + tail), null);
+        CRBCommunication.ProxyResponse viaAlias = CRBCommunication.proxyApiRequest(orderId, requestJson('GET', 'https://apis.udesign.cloud' + tail), null);
+        CRBCommunication.ProxyResponse viaApiHost = CRBCommunication.proxyApiRequest(orderId, requestJson('GET', 'https://apis.aligneroem.com' + tail), null);
         Test.stopTest();
 
         for (CRBCommunication.ProxyResponse r : new List<CRBCommunication.ProxyResponse>{ viaAlias, viaApiHost }) {
@@ -583,7 +583,7 @@ private class CRBCommunicationTest
             }
         }
         HttpRequest sent = mock.lastTo('/attachments/77/download/');
-        System.assertEquals('https://apis.qa.aligneroem.com' + tail, sent.getEndpoint(), 'Ticket query string must be preserved');
+        System.assertEquals('https://apis.aligneroem.com' + tail, sent.getEndpoint(), 'Ticket query string must be preserved');
         System.assertNotEquals(null, sent.getHeader('Authorization'));
     }
 
@@ -599,11 +599,11 @@ private class CRBCommunicationTest
 
         Test.startTest();
         assertRejected(orderId, requestJson('GET', 'https://evil.example.com' + tail), null);
-        assertRejected(orderId, requestJson('GET', 'https://apis.qa.udesign.cloud.evil.example.com' + tail), null);
-        assertRejected(orderId, requestJson('GET', 'https://user@apis.qa.udesign.cloud' + tail), null);
-        assertRejected(orderId, requestJson('GET', 'https://apis.qa.udesign.cloud:8443' + tail), null);
-        assertRejected(orderId, requestJson('GET', 'http://apis.qa.udesign.cloud' + tail), null);
-        assertRejected(orderId, requestJson('GET', 'https://apis.qa.udesign.cloud' + otherOrg), null);
+        assertRejected(orderId, requestJson('GET', 'https://apis.udesign.cloud.evil.example.com' + tail), null);
+        assertRejected(orderId, requestJson('GET', 'https://user@apis.udesign.cloud' + tail), null);
+        assertRejected(orderId, requestJson('GET', 'https://apis.udesign.cloud:8443' + tail), null);
+        assertRejected(orderId, requestJson('GET', 'http://apis.udesign.cloud' + tail), null);
+        assertRejected(orderId, requestJson('GET', 'https://apis.udesign.cloud' + otherOrg), null);
         Test.stopTest();
 
         System.assertEquals(0, mock.seen.size(), 'No callout may leave for rejected paths');

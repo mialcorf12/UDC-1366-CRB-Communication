@@ -1,12 +1,12 @@
 global class CRBCommunication
 {
-    private static final String API_DOMAIN = 'https://apis.qa.aligneroem.com';
+    private static final String API_DOMAIN = 'https://apis.aligneroem.com';
     // Hosts that front the same API gateway. The API returns absolute download_path URLs on
     // the second host; those are rewritten onto API_DOMAIN so the Remote Site Setting and the
     // credentials stay bound to a single host. Extend per environment.
     @TestVisible private static final Set<String> API_HOST_ALIASES = new Set<String>{
         new Url(API_DOMAIN).getHost().toLowerCase(),
-        'apis.qa.udesign.cloud'
+        'apis.udesign.cloud'
     };
 
     @AuraEnabled

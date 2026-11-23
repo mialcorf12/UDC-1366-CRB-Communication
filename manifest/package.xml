@@ -10,6 +10,11 @@
 		<name>AuraDefinitionBundle</name>
 	</types>
 	<types>
+		<members>apis_udesign_cloud</members>
+		<members>udesign_cloud</members>
+		<name>CspTrustedSite</name>
+	</types>
+	<types>
 		<members>uLab_Case__c.Patient_Portal_ID__c</members>
 		<members>uLab_Case__c.uLab_Acct_Number__c</members>
 		<name>CustomField</name>
@@ -17,6 +22,7 @@
 	<types>
 		<members>Authkey</members>
 		<members>tokenapi</members>
+		<members>CRBApiUserId</members>
 		<name>CustomLabel</name>
 	</types>
 	<types>
